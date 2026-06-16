@@ -27,6 +27,17 @@ const asyncHandler = fn => (req, res, next) => {
   Promise.resolve(fn(req, res, next)).catch(next);
 };
 
+// Promise timeout helper
+const timeoutPromise = (ms, promise) => {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('S3 Request Timeout')), ms);
+    promise.then(
+      (res) => { clearTimeout(timer); resolve(res); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+};
+
 // --- Swagger UI Documentation ---
 app.get('/api-docs/swagger.json', (req, res) => {
   res.sendFile(path.join(__dirname, 'swagger.json'));
@@ -106,7 +117,13 @@ const SERVER_DOMAIN = 'http://localhost:3000'; // Change to actual domain in pro
 // Helper: Format UUID with or without dashes
 const stripUUID = (uuid) => uuid.replace(/-/g, '');
 
-const getFullUrl = (url) => url.startsWith('http') ? url : `${SERVER_DOMAIN}${url}`;
+const getFullUrl = (req, url) => {
+  if (!url) return null;
+  if (url.startsWith('http')) return url;
+  const protocol = req.headers['x-forwarded-proto'] === 'https' || req.secure ? 'https' : 'http';
+  const host = req.get('host') || 'localhost:3000';
+  return `${protocol}://${host}${url}`;
+};
 
 // --- Yggdrasil API Endpoints ---
 
@@ -214,8 +231,8 @@ app.get('/sessionserver/session/minecraft/hasJoined', asyncHandler(async (req, r
     textures: {}
   };
 
-  if (user.skin_url) textures.textures.SKIN = { url: getFullUrl(user.skin_url) };
-  if (user.cape_url) textures.textures.CAPE = { url: getFullUrl(user.cape_url) };
+  if (user.skin_url) textures.textures.SKIN = { url: getFullUrl(req, user.skin_url) };
+  if (user.cape_url) textures.textures.CAPE = { url: getFullUrl(req, user.cape_url) };
 
   const texturesBase64 = Buffer.from(JSON.stringify(textures)).toString('base64');
 
@@ -247,8 +264,8 @@ app.get('/sessionserver/session/minecraft/profile/:uuid', asyncHandler(async (re
     textures: {}
   };
 
-  if (user.skin_url) textures.textures.SKIN = { url: getFullUrl(user.skin_url) };
-  if (user.cape_url) textures.textures.CAPE = { url: getFullUrl(user.cape_url) };
+  if (user.skin_url) textures.textures.SKIN = { url: getFullUrl(req, user.skin_url) };
+  if (user.cape_url) textures.textures.CAPE = { url: getFullUrl(req, user.cape_url) };
 
   const texturesBase64 = Buffer.from(JSON.stringify(textures)).toString('base64');
 
@@ -322,21 +339,59 @@ app.post('/api/profile/skin', uploadMemory.single('skin'), asyncHandler(async (r
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     let skinUrl = '';
+    let uploaded = false;
+    const filename = `skins/${decoded.id}.png`;
 
-    if (s3) {
-      const filename = `skins/${decoded.id}.png`;
-      await s3.send(new PutObjectCommand({
-        Bucket: process.env.R2_BUCKET_NAME,
-        Key: filename,
-        Body: req.file.buffer,
-        ContentType: 'image/png',
-      }));
-      skinUrl = `${process.env.R2_PUBLIC_URL}/${filename}?v=${Date.now()}`;
-    } else {
-      // Fallback local save
-      const filename = `${decoded.id}.png`;
-      fs.writeFileSync(`uploads/${filename}`, req.file.buffer);
-      skinUrl = `/uploads/${filename}?v=${Date.now()}`;
+    // Method A: Upload via Cloudflare Worker PUT endpoint (bypasses R2 S3 SDK blocking)
+    if (process.env.CLOUDFLARE_API_KEY && process.env.R2_PUBLIC_URL) {
+      try {
+        const baseUrl = process.env.R2_PUBLIC_URL.endsWith('/') 
+          ? process.env.R2_PUBLIC_URL.slice(0, -1) 
+          : process.env.R2_PUBLIC_URL;
+        const workerUrl = `${baseUrl}/${filename}`;
+        console.log(`[Worker Upload] Uploading skin for user ${decoded.username || decoded.id} via Cloudflare Worker: ${workerUrl}`);
+        
+        const workerRes = await axios.put(workerUrl, req.file.buffer, {
+          headers: {
+            'Authorization': `Bearer ${process.env.CLOUDFLARE_API_KEY}`,
+            'Content-Type': 'image/png'
+          },
+          timeout: 10000
+        });
+        
+        if (workerRes.status === 200 || workerRes.status === 201) {
+          skinUrl = `${baseUrl}/${filename}?v=${Date.now()}`;
+          uploaded = true;
+          console.log(`[Worker Upload] Uploaded successfully to R2 via Cloudflare Worker: ${skinUrl}`);
+        }
+      } catch (workerErr) {
+        console.warn(`[Worker Upload] Failed uploading via Worker PUT:`, workerErr.message);
+      }
+    }
+
+    // Method B: Fallback to direct R2 S3 SDK upload (if Worker API key not provided or failed)
+    if (!uploaded && s3) {
+      try {
+        console.log(`[S3 Upload] Uploading skin for user ${decoded.username || decoded.id} directly to R2 bucket (timeout: 10s)...`);
+        await timeoutPromise(10000, s3.send(new PutObjectCommand({
+          Bucket: process.env.R2_BUCKET_NAME,
+          Key: filename,
+          Body: req.file.buffer,
+          ContentType: 'image/png',
+        })));
+        const baseUrl = process.env.R2_PUBLIC_URL.endsWith('/') 
+          ? process.env.R2_PUBLIC_URL.slice(0, -1) 
+          : process.env.R2_PUBLIC_URL;
+        skinUrl = `${baseUrl}/${filename}?v=${Date.now()}`;
+        uploaded = true;
+        console.log(`[S3 Upload] Uploaded successfully to R2 directly: ${skinUrl}`);
+      } catch (s3Err) {
+        console.error(`[S3 Upload] Direct R2 upload failed:`, s3Err.message);
+      }
+    }
+
+    if (!uploaded) {
+      throw new Error("Не удалось загрузить скин ни через Cloudflare Worker, ни напрямую в R2. Проверьте настройки сети/ключей.");
     }
     
     const db = await getDb();
@@ -348,7 +403,7 @@ app.post('/api/profile/skin', uploadMemory.single('skin'), asyncHandler(async (r
   } catch (err) {
     console.error(err);
     if (!res.destroyed && !res.headersSent) {
-      res.status(401).send();
+      res.status(500).json({ error: 'UploadFailed', errorMessage: err.message });
     }
   }
 }));
@@ -367,21 +422,59 @@ app.post('/api/profile/cape', uploadMemory.single('cape'), asyncHandler(async (r
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     let capeUrl = '';
+    let uploaded = false;
+    const filename = `capes/${decoded.id}.png`;
 
-    if (s3) {
-      const filename = `capes/${decoded.id}.png`;
-      await s3.send(new PutObjectCommand({
-        Bucket: process.env.R2_BUCKET_NAME,
-        Key: filename,
-        Body: req.file.buffer,
-        ContentType: 'image/png',
-      }));
-      capeUrl = `${process.env.R2_PUBLIC_URL}/${filename}?v=${Date.now()}`;
-    } else {
-      // Fallback local save
-      const filename = `cape-${decoded.id}.png`;
-      fs.writeFileSync(`uploads/${filename}`, req.file.buffer);
-      capeUrl = `/uploads/${filename}?v=${Date.now()}`;
+    // Method A: Upload via Cloudflare Worker PUT endpoint (bypasses R2 S3 SDK blocking)
+    if (process.env.CLOUDFLARE_API_KEY && process.env.R2_PUBLIC_URL) {
+      try {
+        const baseUrl = process.env.R2_PUBLIC_URL.endsWith('/') 
+          ? process.env.R2_PUBLIC_URL.slice(0, -1) 
+          : process.env.R2_PUBLIC_URL;
+        const workerUrl = `${baseUrl}/${filename}`;
+        console.log(`[Worker Upload] Uploading cape for user ${decoded.username || decoded.id} via Cloudflare Worker: ${workerUrl}`);
+        
+        const workerRes = await axios.put(workerUrl, req.file.buffer, {
+          headers: {
+            'Authorization': `Bearer ${process.env.CLOUDFLARE_API_KEY}`,
+            'Content-Type': 'image/png'
+          },
+          timeout: 10000
+        });
+        
+        if (workerRes.status === 200 || workerRes.status === 201) {
+          capeUrl = `${baseUrl}/${filename}?v=${Date.now()}`;
+          uploaded = true;
+          console.log(`[Worker Upload] Uploaded successfully to R2 via Cloudflare Worker: ${capeUrl}`);
+        }
+      } catch (workerErr) {
+        console.warn(`[Worker Upload] Failed uploading via Worker PUT:`, workerErr.message);
+      }
+    }
+
+    // Method B: Fallback to direct R2 S3 SDK upload (if Worker API key not provided or failed)
+    if (!uploaded && s3) {
+      try {
+        console.log(`[S3 Upload] Uploading cape for user ${decoded.username || decoded.id} directly to R2 bucket (timeout: 10s)...`);
+        await timeoutPromise(10000, s3.send(new PutObjectCommand({
+          Bucket: process.env.R2_BUCKET_NAME,
+          Key: filename,
+          Body: req.file.buffer,
+          ContentType: 'image/png',
+        })));
+        const baseUrl = process.env.R2_PUBLIC_URL.endsWith('/') 
+          ? process.env.R2_PUBLIC_URL.slice(0, -1) 
+          : process.env.R2_PUBLIC_URL;
+        capeUrl = `${baseUrl}/${filename}?v=${Date.now()}`;
+        uploaded = true;
+        console.log(`[S3 Upload] Uploaded successfully to R2 directly: ${capeUrl}`);
+      } catch (s3Err) {
+        console.error(`[S3 Upload] Direct R2 upload failed:`, s3Err.message);
+      }
+    }
+
+    if (!uploaded) {
+      throw new Error("Не удалось загрузить плащ ни через Cloudflare Worker, ни напрямую в R2. Проверьте настройки сети/ключей.");
     }
     
     const db = await getDb();
@@ -393,7 +486,7 @@ app.post('/api/profile/cape', uploadMemory.single('cape'), asyncHandler(async (r
   } catch (err) {
     console.error(err);
     if (!res.destroyed && !res.headersSent) {
-      res.status(401).send();
+      res.status(500).json({ error: 'UploadFailed', errorMessage: err.message });
     }
   }
 }));
