@@ -7,7 +7,7 @@ const { getDb } = require('./db');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-require('dotenv').config();
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 
 const app = express();
