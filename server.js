@@ -351,18 +351,26 @@ app.post('/api/profile/skin', uploadMemory.single('skin'), asyncHandler(async (r
         const workerUrl = `${baseUrl}/${filename}`;
         console.log(`[Worker Upload] Uploading skin for user ${decoded.username || decoded.id} via Cloudflare Worker: ${workerUrl}`);
         
-        const workerRes = await axios.put(workerUrl, req.file.buffer, {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        
+        const workerRes = await fetch(workerUrl, {
+          method: 'PUT',
           headers: {
             'Authorization': `Bearer ${process.env.CLOUDFLARE_API_KEY}`,
             'Content-Type': 'image/png'
           },
-          timeout: 10000
+          body: req.file.buffer,
+          signal: controller.signal
         });
+        clearTimeout(timeoutId);
         
-        if (workerRes.status === 200 || workerRes.status === 201) {
+        if (workerRes.ok) {
           skinUrl = `${baseUrl}/${filename}?v=${Date.now()}`;
           uploaded = true;
           console.log(`[Worker Upload] Uploaded successfully to R2 via Cloudflare Worker: ${skinUrl}`);
+        } else {
+          console.warn(`[Worker Upload] Worker PUT response status: ${workerRes.status} ${workerRes.statusText}`);
         }
       } catch (workerErr) {
         console.warn(`[Worker Upload] Failed uploading via Worker PUT:`, workerErr.message);
@@ -434,18 +442,26 @@ app.post('/api/profile/cape', uploadMemory.single('cape'), asyncHandler(async (r
         const workerUrl = `${baseUrl}/${filename}`;
         console.log(`[Worker Upload] Uploading cape for user ${decoded.username || decoded.id} via Cloudflare Worker: ${workerUrl}`);
         
-        const workerRes = await axios.put(workerUrl, req.file.buffer, {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        
+        const workerRes = await fetch(workerUrl, {
+          method: 'PUT',
           headers: {
             'Authorization': `Bearer ${process.env.CLOUDFLARE_API_KEY}`,
             'Content-Type': 'image/png'
           },
-          timeout: 10000
+          body: req.file.buffer,
+          signal: controller.signal
         });
+        clearTimeout(timeoutId);
         
-        if (workerRes.status === 200 || workerRes.status === 201) {
+        if (workerRes.ok) {
           capeUrl = `${baseUrl}/${filename}?v=${Date.now()}`;
           uploaded = true;
           console.log(`[Worker Upload] Uploaded successfully to R2 via Cloudflare Worker: ${capeUrl}`);
+        } else {
+          console.warn(`[Worker Upload] Worker PUT response status: ${workerRes.status} ${workerRes.statusText}`);
         }
       } catch (workerErr) {
         console.warn(`[Worker Upload] Failed uploading via Worker PUT:`, workerErr.message);
