@@ -22,6 +22,11 @@ app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// Helper to handle async express routes and catch errors
+const asyncHandler = fn => (req, res, next) => {
+  Promise.resolve(fn(req, res, next)).catch(next);
+};
+
 // --- Swagger UI Documentation ---
 app.get('/api-docs/swagger.json', (req, res) => {
   res.sendFile(path.join(__dirname, 'swagger.json'));
@@ -117,7 +122,7 @@ app.get('/api/yggdrasil', (req, res) => {
   });
 });
 
-app.post('/authserver/authenticate', async (req, res) => {
+app.post('/authserver/authenticate', asyncHandler(async (req, res) => {
   const { username, password, clientToken = uuidv4() } = req.body;
   const db = await getDb();
   const user = await db.get('SELECT * FROM users WHERE username = ?', [username]);
@@ -135,9 +140,9 @@ app.post('/authserver/authenticate', async (req, res) => {
     availableProfiles: [{ id: stripUUID(user.uuid), name: user.username }],
     selectedProfile: { id: stripUUID(user.uuid), name: user.username }
   });
-});
+}));
 
-app.post('/authserver/refresh', async (req, res) => {
+app.post('/authserver/refresh', asyncHandler(async (req, res) => {
   const { accessToken, clientToken } = req.body;
   const db = await getDb();
   const user = await db.get('SELECT * FROM users WHERE access_token = ? AND client_token = ?', [accessToken, clientToken]);
@@ -154,9 +159,9 @@ app.post('/authserver/refresh', async (req, res) => {
     clientToken,
     selectedProfile: { id: stripUUID(user.uuid), name: user.username }
   });
-});
+}));
 
-app.post('/authserver/validate', async (req, res) => {
+app.post('/authserver/validate', asyncHandler(async (req, res) => {
   const { accessToken, clientToken } = req.body;
   const db = await getDb();
   
@@ -173,16 +178,16 @@ app.post('/authserver/validate', async (req, res) => {
   }
 
   res.status(204).send();
-});
+}));
 
 // --- Session Server (Minecraft Server joins) ---
 
-app.post('/sessionserver/session/minecraft/join', async (req, res) => {
+app.post('/sessionserver/session/minecraft/join', asyncHandler(async (req, res) => {
   const { accessToken, selectedProfile, serverId } = req.body;
   const db = await getDb();
 
   // Minecraft client sends selectedProfile as UUID without dashes
-  const user = await db.get('SELECT * FROM users WHERE access_token = ? AND REPLACE(uuid, "-", "") = ?', [accessToken, selectedProfile]);
+  const user = await db.get("SELECT * FROM users WHERE access_token = ? AND REPLACE(uuid, '-', '') = ?", [accessToken, selectedProfile]);
 
   if (!user) {
     return res.status(401).json({ error: "ForbiddenOperationException", errorMessage: "Invalid token or profile." });
@@ -190,9 +195,9 @@ app.post('/sessionserver/session/minecraft/join', async (req, res) => {
 
   await db.run('UPDATE users SET server_id = ? WHERE id = ?', [serverId, user.id]);
   res.status(204).send();
-});
+}));
 
-app.get('/sessionserver/session/minecraft/hasJoined', async (req, res) => {
+app.get('/sessionserver/session/minecraft/hasJoined', asyncHandler(async (req, res) => {
   const { username, serverId } = req.query;
   const db = await getDb();
   const user = await db.get('SELECT * FROM users WHERE username = ? AND server_id = ?', [username, serverId]);
@@ -224,12 +229,12 @@ app.get('/sessionserver/session/minecraft/hasJoined', async (req, res) => {
       }
     ]
   });
-});
+}));
 
-app.get('/sessionserver/session/minecraft/profile/:uuid', async (req, res) => {
+app.get('/sessionserver/session/minecraft/profile/:uuid', asyncHandler(async (req, res) => {
   const uuid = req.params.uuid;
   const db = await getDb();
-  const user = await db.get('SELECT * FROM users WHERE REPLACE(uuid, "-", "") = ?', [uuid]);
+  const user = await db.get("SELECT * FROM users WHERE REPLACE(uuid, '-', '') = ?", [uuid]);
 
   if (!user) {
     return res.status(204).send();
@@ -257,11 +262,11 @@ app.get('/sessionserver/session/minecraft/profile/:uuid', async (req, res) => {
       }
     ]
   });
-});
+}));
 
 // --- Web Frontend API ---
 
-app.post('/api/register', async (req, res) => {
+app.post('/api/register', asyncHandler(async (req, res) => {
   const { username, password } = req.body;
   const db = await getDb();
 
@@ -273,9 +278,9 @@ app.post('/api/register', async (req, res) => {
   } catch (err) {
     res.status(400).json({ error: 'Username may already exist' });
   }
-});
+}));
 
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', asyncHandler(async (req, res) => {
   const { username, password } = req.body;
   const db = await getDb();
 
@@ -286,9 +291,9 @@ app.post('/api/login', async (req, res) => {
 
   const token = jwt.sign({ id: user.id, username: user.username, uuid: user.uuid, is_admin: user.is_admin }, JWT_SECRET, { expiresIn: '7d' });
   res.json({ token, user: { username: user.username, uuid: user.uuid, skin_url: user.skin_url, cape_url: user.cape_url, is_admin: user.is_admin } });
-});
+}));
 
-app.get('/api/profile', async (req, res) => {
+app.get('/api/profile', asyncHandler(async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).send();
   const token = authHeader.split(' ')[1];
@@ -301,11 +306,17 @@ app.get('/api/profile', async (req, res) => {
   } catch (err) {
     res.status(401).send();
   }
-});
+}));
 
-app.post('/api/profile/skin', uploadMemory.single('skin'), async (req, res) => {
+app.post('/api/profile/skin', uploadMemory.single('skin'), asyncHandler(async (req, res) => {
+  if (req.destroyed || res.destroyed) return;
   const authHeader = req.headers.authorization;
-  if (!authHeader || !req.file) return res.status(400).send();
+  if (!authHeader || !req.file) {
+    if (!res.destroyed && !res.headersSent) {
+      res.status(400).send();
+    }
+    return;
+  }
   const token = authHeader.split(' ')[1];
 
   try {
@@ -331,16 +342,26 @@ app.post('/api/profile/skin', uploadMemory.single('skin'), async (req, res) => {
     const db = await getDb();
     await db.run('UPDATE users SET skin_url = ? WHERE id = ?', [skinUrl, decoded.id]);
     
-    res.json({ message: 'Skin updated', skin_url: skinUrl });
+    if (!res.destroyed && !res.headersSent) {
+      res.json({ message: 'Skin updated', skin_url: skinUrl });
+    }
   } catch (err) {
     console.error(err);
-    res.status(401).send();
+    if (!res.destroyed && !res.headersSent) {
+      res.status(401).send();
+    }
   }
-});
+}));
 
-app.post('/api/profile/cape', uploadMemory.single('cape'), async (req, res) => {
+app.post('/api/profile/cape', uploadMemory.single('cape'), asyncHandler(async (req, res) => {
+  if (req.destroyed || res.destroyed) return;
   const authHeader = req.headers.authorization;
-  if (!authHeader || !req.file) return res.status(400).send();
+  if (!authHeader || !req.file) {
+    if (!res.destroyed && !res.headersSent) {
+      res.status(400).send();
+    }
+    return;
+  }
   const token = authHeader.split(' ')[1];
 
   try {
@@ -366,14 +387,18 @@ app.post('/api/profile/cape', uploadMemory.single('cape'), async (req, res) => {
     const db = await getDb();
     await db.run('UPDATE users SET cape_url = ? WHERE id = ?', [capeUrl, decoded.id]);
     
-    res.json({ message: 'Cape updated', cape_url: capeUrl });
+    if (!res.destroyed && !res.headersSent) {
+      res.json({ message: 'Cape updated', cape_url: capeUrl });
+    }
   } catch (err) {
     console.error(err);
-    res.status(401).send();
+    if (!res.destroyed && !res.headersSent) {
+      res.status(401).send();
+    }
   }
-});
+}));
 
-app.get('/api/admin/users', async (req, res) => {
+app.get('/api/admin/users', asyncHandler(async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).send();
   const token = authHeader.split(' ')[1];
@@ -388,9 +413,9 @@ app.get('/api/admin/users', async (req, res) => {
   } catch (err) {
     res.status(401).send();
   }
-});
+}));
 
-app.delete('/api/admin/users/:id', async (req, res) => {
+app.delete('/api/admin/users/:id', asyncHandler(async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).send();
   const token = authHeader.split(' ')[1];
@@ -409,9 +434,9 @@ app.delete('/api/admin/users/:id', async (req, res) => {
   } catch (err) {
     res.status(401).send();
   }
-});
+}));
 
-app.post('/api/admin/promote/:id', async (req, res) => {
+app.post('/api/admin/promote/:id', asyncHandler(async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).send();
   const token = authHeader.split(' ')[1];
@@ -425,6 +450,14 @@ app.post('/api/admin/promote/:id', async (req, res) => {
     res.json({ message: 'User promoted to admin' });
   } catch (err) {
     res.status(401).send();
+  }
+}));
+
+// Global error handler middleware
+app.use((err, req, res, next) => {
+  console.error('Unhandled server error:', err);
+  if (!res.destroyed && !res.headersSent) {
+    res.status(500).json({ error: 'InternalServerError', errorMessage: err.message || 'An unexpected error occurred.' });
   }
 });
 
