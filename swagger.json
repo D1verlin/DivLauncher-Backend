@@ -7,6 +7,10 @@
   },
   "servers": [
     {
+      "url": "https://mcauth.diverlin.ru",
+      "description": "Продакшн сервер"
+    },
+    {
       "url": "http://localhost:3000",
       "description": "Локальный сервер разработки"
     }
