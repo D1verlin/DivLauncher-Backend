@@ -39,7 +39,8 @@ async function getDb() {
         access_token TEXT,
         client_token TEXT,
         is_admin INTEGER DEFAULT 0,
-        badge TEXT DEFAULT NULL
+        badge TEXT DEFAULT NULL,
+        bio TEXT DEFAULT NULL
       )
     `);
 
@@ -51,6 +52,12 @@ async function getDb() {
 
     try {
       await dbInstance.exec(`ALTER TABLE users ADD COLUMN badge TEXT DEFAULT NULL`);
+    } catch (e) {
+      // Column might already exist, ignore
+    }
+
+    try {
+      await dbInstance.exec(`ALTER TABLE users ADD COLUMN bio TEXT DEFAULT NULL`);
     } catch (e) {
       // Column might already exist, ignore
     }

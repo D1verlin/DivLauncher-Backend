@@ -303,7 +303,7 @@ app.post('/api/login', asyncHandler(async (req, res) => {
   }
 
   const token = jwt.sign({ id: user.id, username: user.username, uuid: user.uuid, is_admin: user.is_admin }, JWT_SECRET, { expiresIn: '7d' });
-  res.json({ token, user: { id: user.id, username: user.username, uuid: user.uuid, skin_url: user.skin_url, cape_url: user.cape_url, is_admin: user.is_admin, badge: user.badge } });
+  res.json({ token, user: { id: user.id, username: user.username, uuid: user.uuid, skin_url: user.skin_url, cape_url: user.cape_url, is_admin: user.is_admin, badge: user.badge, bio: user.bio } });
 }));
 
 app.get('/api/profile', asyncHandler(async (req, res) => {
@@ -314,8 +314,67 @@ app.get('/api/profile', asyncHandler(async (req, res) => {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     const db = await getDb();
-    const user = await db.get('SELECT id, username, uuid, skin_url, cape_url, is_admin, badge FROM users WHERE id = ?', [decoded.id]);
+    const user = await db.get('SELECT id, username, uuid, skin_url, cape_url, is_admin, badge, bio FROM users WHERE id = ?', [decoded.id]);
     res.json(user);
+  } catch (err) {
+    res.status(401).send();
+  }
+}));
+
+app.post('/api/profile/password', asyncHandler(async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).send();
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const { oldPassword, newPassword } = req.body;
+    if (!oldPassword || !newPassword || newPassword.length < 4) {
+      return res.status(400).json({ error: 'InvalidPassword', errorMessage: 'Пароль должен быть не менее 4 символов' });
+    }
+
+    const db = await getDb();
+    const user = await db.get('SELECT * FROM users WHERE id = ?', [decoded.id]);
+    if (!user) {
+      return res.status(404).json({ error: 'UserNotFound', errorMessage: 'Пользователь не найден' });
+    }
+
+    const match = await bcrypt.compare(oldPassword, user.password);
+    if (!match) {
+      return res.status(400).json({ error: 'IncorrectOldPassword', errorMessage: 'Неверный текущий пароль' });
+    }
+
+    const hash = await bcrypt.hash(newPassword, 10);
+    await db.run('UPDATE users SET password = ? WHERE id = ?', [hash, decoded.id]);
+    res.json({ message: 'Пароль успешно изменен' });
+  } catch (err) {
+    res.status(401).send();
+  }
+}));
+
+app.post('/api/profile/bio', asyncHandler(async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).send();
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const { bio } = req.body;
+    const db = await getDb();
+    await db.run('UPDATE users SET bio = ? WHERE id = ?', [bio === '' || bio === null ? null : bio, decoded.id]);
+    res.json({ message: 'Статус успешно обновлен', bio: bio || null });
+  } catch (err) {
+    res.status(401).send();
+  }
+}));
+
+app.get('/api/users', asyncHandler(async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).send();
+  const token = authHeader.split(' ')[1];
+  try {
+    jwt.verify(token, JWT_SECRET);
+    const db = await getDb();
+    const users = await db.all('SELECT username, uuid, skin_url, cape_url, is_admin, badge, bio FROM users');
+    res.json(users);
   } catch (err) {
     res.status(401).send();
   }
@@ -475,7 +534,7 @@ app.put('/api/admin/users/:id', asyncHandler(async (req, res) => {
     const currentUser = await db.get('SELECT is_admin FROM users WHERE id = ?', [decoded.id]);
     if (!currentUser || !currentUser.is_admin) return res.status(403).json({ error: 'Not an admin' });
 
-    const { is_admin, badge } = req.body;
+    const { is_admin, badge, bio } = req.body;
     
     // Prevent demoting yourself to avoid losing admin access
     if (parseInt(req.params.id) === decoded.id && is_admin !== undefined && parseInt(is_admin) === 0) {
@@ -491,6 +550,10 @@ app.put('/api/admin/users/:id', asyncHandler(async (req, res) => {
     if (badge !== undefined) {
       updates.push('badge = ?');
       params.push(badge === '' || badge === null ? null : badge);
+    }
+    if (bio !== undefined) {
+      updates.push('bio = ?');
+      params.push(bio === '' || bio === null ? null : bio);
     }
 
     if (updates.length > 0) {
