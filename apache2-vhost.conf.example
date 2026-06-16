@@ -3,10 +3,10 @@
     ServerName auth.yourdomain.com
     ServerAdmin admin@yourdomain.com
 
-    # Перенаправление трафика на локальный Express.js сервер (порт 3000)
+    # Перенаправление трафика на локальный Express.js сервер (например, порт 3005, если 3000 занят)
     ProxyPreserveHost On
-    ProxyPass / http://127.0.0.1:3000/
-    ProxyPassReverse / http://127.0.0.1:3000/
+    ProxyPass / http://127.0.0.1:3005/
+    ProxyPassReverse / http://127.0.0.1:3005/
 
     # Логирование
     ErrorLog ${APACHE_LOG_DIR}/divlauncher-auth-error.log

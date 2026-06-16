@@ -7,7 +7,14 @@ const { getDb } = require('./db');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+const dotenvResult = require('dotenv').config({ path: path.join(__dirname, '.env') });
+if (dotenvResult.error) {
+  console.log('Dotenv warning: .env file not found or could not be loaded:', dotenvResult.error.message);
+} else {
+  console.log('Dotenv: .env loaded successfully from', path.join(__dirname, '.env'));
+  console.log('Dotenv parsed PORT:', dotenvResult.parsed ? dotenvResult.parsed.PORT : 'undefined');
+}
+console.log('Process env PORT:', process.env.PORT);
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 
 const app = express();
