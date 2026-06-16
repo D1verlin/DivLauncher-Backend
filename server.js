@@ -318,15 +318,8 @@ app.get('/api/profile', asyncHandler(async (req, res) => {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     const db = await getDb();
-    const user = await db.get('SELECT id, username, uuid, skin_url, cape_url, is_admin FROM users WHERE id = ?', [decoded.id]);
-    if (!user) return res.status(404).json({ error: 'UserNotFound' });
-    res.json({
-      ...user,
-      upload_config: {
-        public_url: process.env.R2_PUBLIC_URL || '',
-        api_key: process.env.CLOUDFLARE_API_KEY || ''
-      }
-    });
+    const user = await db.get('SELECT username, uuid, skin_url, cape_url, is_admin FROM users WHERE id = ?', [decoded.id]);
+    res.json(user);
   } catch (err) {
     res.status(401).send();
   }
@@ -345,81 +338,22 @@ app.post('/api/profile/skin', uploadMemory.single('skin'), asyncHandler(async (r
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    let skinUrl = '';
-    let uploaded = false;
-    const filename = `skins/${decoded.id}.png`;
-
-    if (req.body && req.body.skinUrl) {
-      skinUrl = req.body.skinUrl;
-      uploaded = true;
-      console.log(`[Direct Upload Update] User ${decoded.username || decoded.id} updated skin URL directly: ${skinUrl}`);
-    } else if (req.file) {
-      // Method A: Upload via Cloudflare Worker PUT endpoint (bypasses R2 S3 SDK blocking)
-      if (process.env.CLOUDFLARE_API_KEY && process.env.R2_PUBLIC_URL) {
-        try {
-          const baseUrl = process.env.R2_PUBLIC_URL.endsWith('/') 
-            ? process.env.R2_PUBLIC_URL.slice(0, -1) 
-            : process.env.R2_PUBLIC_URL;
-          const workerUrl = `${baseUrl}/${filename}`;
-          console.log(`[Worker Upload] Uploading skin for user ${decoded.username || decoded.id} via Cloudflare Worker: ${workerUrl}`);
-          
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10000);
-          
-          const workerRes = await fetch(workerUrl, {
-            method: 'PUT',
-            headers: {
-              'Authorization': `Bearer ${process.env.CLOUDFLARE_API_KEY}`,
-              'Content-Type': 'image/png'
-            },
-            body: req.file.buffer,
-            signal: controller.signal
-          });
-          clearTimeout(timeoutId);
-          
-          if (workerRes.ok) {
-            skinUrl = `${baseUrl}/${filename}?v=${Date.now()}`;
-            uploaded = true;
-            console.log(`[Worker Upload] Uploaded successfully to R2 via Cloudflare Worker: ${skinUrl}`);
-          } else {
-            console.warn(`[Worker Upload] Worker PUT response status: ${workerRes.status} ${workerRes.statusText}`);
-          }
-        } catch (workerErr) {
-          console.warn(`[Worker Upload] Failed uploading via Worker PUT:`, workerErr.message);
-        }
-      }
-
-      // Method B: Fallback to direct R2 S3 SDK upload (if Worker API key not provided or failed)
-      if (!uploaded && s3) {
-        try {
-          console.log(`[S3 Upload] Uploading skin for user ${decoded.username || decoded.id} directly to R2 bucket (timeout: 10s)...`);
-          await timeoutPromise(10000, s3.send(new PutObjectCommand({
-            Bucket: process.env.R2_BUCKET_NAME,
-            Key: filename,
-            Body: req.file.buffer,
-            ContentType: 'image/png',
-          })));
-          const baseUrl = process.env.R2_PUBLIC_URL.endsWith('/') 
-            ? process.env.R2_PUBLIC_URL.slice(0, -1) 
-            : process.env.R2_PUBLIC_URL;
-          skinUrl = `${baseUrl}/${filename}?v=${Date.now()}`;
-          uploaded = true;
-          console.log(`[S3 Upload] Uploaded successfully to R2 directly: ${skinUrl}`);
-        } catch (s3Err) {
-          console.error(`[S3 Upload] Direct R2 upload failed:`, s3Err.message);
-        }
-      }
-    } else {
+    if (!req.file) {
       if (!res.destroyed && !res.headersSent) {
-        res.status(400).json({ error: 'NoFileOrUrl', errorMessage: 'Не передан файл или URL скина' });
+        res.status(400).json({ error: 'NoFile', errorMessage: 'Не передан файл скина' });
       }
       return;
     }
 
-    if (!uploaded) {
-      throw new Error("Не удалось загрузить скин ни через Cloudflare Worker, ни напрямую в R2. Проверьте настройки сети/ключей.");
+    const targetDir = path.join(__dirname, 'uploads', 'skins');
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
     }
-    
+    const targetPath = path.join(targetDir, `${decoded.id}.png`);
+    fs.writeFileSync(targetPath, req.file.buffer);
+
+    const skinUrl = `/uploads/skins/${decoded.id}.png?v=${Date.now()}`;
+
     const db = await getDb();
     await db.run('UPDATE users SET skin_url = ? WHERE id = ?', [skinUrl, decoded.id]);
     
@@ -447,81 +381,22 @@ app.post('/api/profile/cape', uploadMemory.single('cape'), asyncHandler(async (r
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    let capeUrl = '';
-    let uploaded = false;
-    const filename = `capes/${decoded.id}.png`;
-
-    if (req.body && req.body.capeUrl) {
-      capeUrl = req.body.capeUrl;
-      uploaded = true;
-      console.log(`[Direct Upload Update] User ${decoded.username || decoded.id} updated cape URL directly: ${capeUrl}`);
-    } else if (req.file) {
-      // Method A: Upload via Cloudflare Worker PUT endpoint (bypasses R2 S3 SDK blocking)
-      if (process.env.CLOUDFLARE_API_KEY && process.env.R2_PUBLIC_URL) {
-        try {
-          const baseUrl = process.env.R2_PUBLIC_URL.endsWith('/') 
-            ? process.env.R2_PUBLIC_URL.slice(0, -1) 
-            : process.env.R2_PUBLIC_URL;
-          const workerUrl = `${baseUrl}/${filename}`;
-          console.log(`[Worker Upload] Uploading cape for user ${decoded.username || decoded.id} via Cloudflare Worker: ${workerUrl}`);
-          
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10000);
-          
-          const workerRes = await fetch(workerUrl, {
-            method: 'PUT',
-            headers: {
-              'Authorization': `Bearer ${process.env.CLOUDFLARE_API_KEY}`,
-              'Content-Type': 'image/png'
-            },
-            body: req.file.buffer,
-            signal: controller.signal
-          });
-          clearTimeout(timeoutId);
-          
-          if (workerRes.ok) {
-            capeUrl = `${baseUrl}/${filename}?v=${Date.now()}`;
-            uploaded = true;
-            console.log(`[Worker Upload] Uploaded successfully to R2 via Cloudflare Worker: ${capeUrl}`);
-          } else {
-            console.warn(`[Worker Upload] Worker PUT response status: ${workerRes.status} ${workerRes.statusText}`);
-          }
-        } catch (workerErr) {
-          console.warn(`[Worker Upload] Failed uploading via Worker PUT:`, workerErr.message);
-        }
-      }
-
-      // Method B: Fallback to direct R2 S3 SDK upload (if Worker API key not provided or failed)
-      if (!uploaded && s3) {
-        try {
-          console.log(`[S3 Upload] Uploading cape for user ${decoded.username || decoded.id} directly to R2 bucket (timeout: 10s)...`);
-          await timeoutPromise(10000, s3.send(new PutObjectCommand({
-            Bucket: process.env.R2_BUCKET_NAME,
-            Key: filename,
-            Body: req.file.buffer,
-            ContentType: 'image/png',
-          })));
-          const baseUrl = process.env.R2_PUBLIC_URL.endsWith('/') 
-            ? process.env.R2_PUBLIC_URL.slice(0, -1) 
-            : process.env.R2_PUBLIC_URL;
-          capeUrl = `${baseUrl}/${filename}?v=${Date.now()}`;
-          uploaded = true;
-          console.log(`[S3 Upload] Uploaded successfully to R2 directly: ${capeUrl}`);
-        } catch (s3Err) {
-          console.error(`[S3 Upload] Direct R2 upload failed:`, s3Err.message);
-        }
-      }
-    } else {
+    if (!req.file) {
       if (!res.destroyed && !res.headersSent) {
-        res.status(400).json({ error: 'NoFileOrUrl', errorMessage: 'Не передан файл или URL плаща' });
+        res.status(400).json({ error: 'NoFile', errorMessage: 'Не передан файл плаща' });
       }
       return;
     }
 
-    if (!uploaded) {
-      throw new Error("Не удалось загрузить плащ ни через Cloudflare Worker, ни напрямую в R2. Проверьте настройки сети/ключей.");
+    const targetDir = path.join(__dirname, 'uploads', 'capes');
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
     }
-    
+    const targetPath = path.join(targetDir, `${decoded.id}.png`);
+    fs.writeFileSync(targetPath, req.file.buffer);
+
+    const capeUrl = `/uploads/capes/${decoded.id}.png?v=${Date.now()}`;
+
     const db = await getDb();
     await db.run('UPDATE users SET cape_url = ? WHERE id = ?', [capeUrl, decoded.id]);
     
