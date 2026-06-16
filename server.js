@@ -318,8 +318,15 @@ app.get('/api/profile', asyncHandler(async (req, res) => {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     const db = await getDb();
-    const user = await db.get('SELECT username, uuid, skin_url, cape_url, is_admin FROM users WHERE id = ?', [decoded.id]);
-    res.json(user);
+    const user = await db.get('SELECT id, username, uuid, skin_url, cape_url, is_admin FROM users WHERE id = ?', [decoded.id]);
+    if (!user) return res.status(404).json({ error: 'UserNotFound' });
+    res.json({
+      ...user,
+      upload_config: {
+        public_url: process.env.R2_PUBLIC_URL || '',
+        api_key: process.env.CLOUDFLARE_API_KEY || ''
+      }
+    });
   } catch (err) {
     res.status(401).send();
   }
@@ -328,7 +335,7 @@ app.get('/api/profile', asyncHandler(async (req, res) => {
 app.post('/api/profile/skin', uploadMemory.single('skin'), asyncHandler(async (req, res) => {
   if (req.destroyed || res.destroyed) return;
   const authHeader = req.headers.authorization;
-  if (!authHeader || !req.file) {
+  if (!authHeader) {
     if (!res.destroyed && !res.headersSent) {
       res.status(400).send();
     }
@@ -342,60 +349,71 @@ app.post('/api/profile/skin', uploadMemory.single('skin'), asyncHandler(async (r
     let uploaded = false;
     const filename = `skins/${decoded.id}.png`;
 
-    // Method A: Upload via Cloudflare Worker PUT endpoint (bypasses R2 S3 SDK blocking)
-    if (process.env.CLOUDFLARE_API_KEY && process.env.R2_PUBLIC_URL) {
-      try {
-        const baseUrl = process.env.R2_PUBLIC_URL.endsWith('/') 
-          ? process.env.R2_PUBLIC_URL.slice(0, -1) 
-          : process.env.R2_PUBLIC_URL;
-        const workerUrl = `${baseUrl}/${filename}`;
-        console.log(`[Worker Upload] Uploading skin for user ${decoded.username || decoded.id} via Cloudflare Worker: ${workerUrl}`);
-        
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
-        
-        const workerRes = await fetch(workerUrl, {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${process.env.CLOUDFLARE_API_KEY}`,
-            'Content-Type': 'image/png'
-          },
-          body: req.file.buffer,
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-        
-        if (workerRes.ok) {
+    if (req.body && req.body.skinUrl) {
+      skinUrl = req.body.skinUrl;
+      uploaded = true;
+      console.log(`[Direct Upload Update] User ${decoded.username || decoded.id} updated skin URL directly: ${skinUrl}`);
+    } else if (req.file) {
+      // Method A: Upload via Cloudflare Worker PUT endpoint (bypasses R2 S3 SDK blocking)
+      if (process.env.CLOUDFLARE_API_KEY && process.env.R2_PUBLIC_URL) {
+        try {
+          const baseUrl = process.env.R2_PUBLIC_URL.endsWith('/') 
+            ? process.env.R2_PUBLIC_URL.slice(0, -1) 
+            : process.env.R2_PUBLIC_URL;
+          const workerUrl = `${baseUrl}/${filename}`;
+          console.log(`[Worker Upload] Uploading skin for user ${decoded.username || decoded.id} via Cloudflare Worker: ${workerUrl}`);
+          
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000);
+          
+          const workerRes = await fetch(workerUrl, {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${process.env.CLOUDFLARE_API_KEY}`,
+              'Content-Type': 'image/png'
+            },
+            body: req.file.buffer,
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+          
+          if (workerRes.ok) {
+            skinUrl = `${baseUrl}/${filename}?v=${Date.now()}`;
+            uploaded = true;
+            console.log(`[Worker Upload] Uploaded successfully to R2 via Cloudflare Worker: ${skinUrl}`);
+          } else {
+            console.warn(`[Worker Upload] Worker PUT response status: ${workerRes.status} ${workerRes.statusText}`);
+          }
+        } catch (workerErr) {
+          console.warn(`[Worker Upload] Failed uploading via Worker PUT:`, workerErr.message);
+        }
+      }
+
+      // Method B: Fallback to direct R2 S3 SDK upload (if Worker API key not provided or failed)
+      if (!uploaded && s3) {
+        try {
+          console.log(`[S3 Upload] Uploading skin for user ${decoded.username || decoded.id} directly to R2 bucket (timeout: 10s)...`);
+          await timeoutPromise(10000, s3.send(new PutObjectCommand({
+            Bucket: process.env.R2_BUCKET_NAME,
+            Key: filename,
+            Body: req.file.buffer,
+            ContentType: 'image/png',
+          })));
+          const baseUrl = process.env.R2_PUBLIC_URL.endsWith('/') 
+            ? process.env.R2_PUBLIC_URL.slice(0, -1) 
+            : process.env.R2_PUBLIC_URL;
           skinUrl = `${baseUrl}/${filename}?v=${Date.now()}`;
           uploaded = true;
-          console.log(`[Worker Upload] Uploaded successfully to R2 via Cloudflare Worker: ${skinUrl}`);
-        } else {
-          console.warn(`[Worker Upload] Worker PUT response status: ${workerRes.status} ${workerRes.statusText}`);
+          console.log(`[S3 Upload] Uploaded successfully to R2 directly: ${skinUrl}`);
+        } catch (s3Err) {
+          console.error(`[S3 Upload] Direct R2 upload failed:`, s3Err.message);
         }
-      } catch (workerErr) {
-        console.warn(`[Worker Upload] Failed uploading via Worker PUT:`, workerErr.message);
       }
-    }
-
-    // Method B: Fallback to direct R2 S3 SDK upload (if Worker API key not provided or failed)
-    if (!uploaded && s3) {
-      try {
-        console.log(`[S3 Upload] Uploading skin for user ${decoded.username || decoded.id} directly to R2 bucket (timeout: 10s)...`);
-        await timeoutPromise(10000, s3.send(new PutObjectCommand({
-          Bucket: process.env.R2_BUCKET_NAME,
-          Key: filename,
-          Body: req.file.buffer,
-          ContentType: 'image/png',
-        })));
-        const baseUrl = process.env.R2_PUBLIC_URL.endsWith('/') 
-          ? process.env.R2_PUBLIC_URL.slice(0, -1) 
-          : process.env.R2_PUBLIC_URL;
-        skinUrl = `${baseUrl}/${filename}?v=${Date.now()}`;
-        uploaded = true;
-        console.log(`[S3 Upload] Uploaded successfully to R2 directly: ${skinUrl}`);
-      } catch (s3Err) {
-        console.error(`[S3 Upload] Direct R2 upload failed:`, s3Err.message);
+    } else {
+      if (!res.destroyed && !res.headersSent) {
+        res.status(400).json({ error: 'NoFileOrUrl', errorMessage: 'Не передан файл или URL скина' });
       }
+      return;
     }
 
     if (!uploaded) {
@@ -419,7 +437,7 @@ app.post('/api/profile/skin', uploadMemory.single('skin'), asyncHandler(async (r
 app.post('/api/profile/cape', uploadMemory.single('cape'), asyncHandler(async (req, res) => {
   if (req.destroyed || res.destroyed) return;
   const authHeader = req.headers.authorization;
-  if (!authHeader || !req.file) {
+  if (!authHeader) {
     if (!res.destroyed && !res.headersSent) {
       res.status(400).send();
     }
@@ -433,60 +451,71 @@ app.post('/api/profile/cape', uploadMemory.single('cape'), asyncHandler(async (r
     let uploaded = false;
     const filename = `capes/${decoded.id}.png`;
 
-    // Method A: Upload via Cloudflare Worker PUT endpoint (bypasses R2 S3 SDK blocking)
-    if (process.env.CLOUDFLARE_API_KEY && process.env.R2_PUBLIC_URL) {
-      try {
-        const baseUrl = process.env.R2_PUBLIC_URL.endsWith('/') 
-          ? process.env.R2_PUBLIC_URL.slice(0, -1) 
-          : process.env.R2_PUBLIC_URL;
-        const workerUrl = `${baseUrl}/${filename}`;
-        console.log(`[Worker Upload] Uploading cape for user ${decoded.username || decoded.id} via Cloudflare Worker: ${workerUrl}`);
-        
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
-        
-        const workerRes = await fetch(workerUrl, {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${process.env.CLOUDFLARE_API_KEY}`,
-            'Content-Type': 'image/png'
-          },
-          body: req.file.buffer,
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-        
-        if (workerRes.ok) {
+    if (req.body && req.body.capeUrl) {
+      capeUrl = req.body.capeUrl;
+      uploaded = true;
+      console.log(`[Direct Upload Update] User ${decoded.username || decoded.id} updated cape URL directly: ${capeUrl}`);
+    } else if (req.file) {
+      // Method A: Upload via Cloudflare Worker PUT endpoint (bypasses R2 S3 SDK blocking)
+      if (process.env.CLOUDFLARE_API_KEY && process.env.R2_PUBLIC_URL) {
+        try {
+          const baseUrl = process.env.R2_PUBLIC_URL.endsWith('/') 
+            ? process.env.R2_PUBLIC_URL.slice(0, -1) 
+            : process.env.R2_PUBLIC_URL;
+          const workerUrl = `${baseUrl}/${filename}`;
+          console.log(`[Worker Upload] Uploading cape for user ${decoded.username || decoded.id} via Cloudflare Worker: ${workerUrl}`);
+          
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000);
+          
+          const workerRes = await fetch(workerUrl, {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${process.env.CLOUDFLARE_API_KEY}`,
+              'Content-Type': 'image/png'
+            },
+            body: req.file.buffer,
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+          
+          if (workerRes.ok) {
+            capeUrl = `${baseUrl}/${filename}?v=${Date.now()}`;
+            uploaded = true;
+            console.log(`[Worker Upload] Uploaded successfully to R2 via Cloudflare Worker: ${capeUrl}`);
+          } else {
+            console.warn(`[Worker Upload] Worker PUT response status: ${workerRes.status} ${workerRes.statusText}`);
+          }
+        } catch (workerErr) {
+          console.warn(`[Worker Upload] Failed uploading via Worker PUT:`, workerErr.message);
+        }
+      }
+
+      // Method B: Fallback to direct R2 S3 SDK upload (if Worker API key not provided or failed)
+      if (!uploaded && s3) {
+        try {
+          console.log(`[S3 Upload] Uploading cape for user ${decoded.username || decoded.id} directly to R2 bucket (timeout: 10s)...`);
+          await timeoutPromise(10000, s3.send(new PutObjectCommand({
+            Bucket: process.env.R2_BUCKET_NAME,
+            Key: filename,
+            Body: req.file.buffer,
+            ContentType: 'image/png',
+          })));
+          const baseUrl = process.env.R2_PUBLIC_URL.endsWith('/') 
+            ? process.env.R2_PUBLIC_URL.slice(0, -1) 
+            : process.env.R2_PUBLIC_URL;
           capeUrl = `${baseUrl}/${filename}?v=${Date.now()}`;
           uploaded = true;
-          console.log(`[Worker Upload] Uploaded successfully to R2 via Cloudflare Worker: ${capeUrl}`);
-        } else {
-          console.warn(`[Worker Upload] Worker PUT response status: ${workerRes.status} ${workerRes.statusText}`);
+          console.log(`[S3 Upload] Uploaded successfully to R2 directly: ${capeUrl}`);
+        } catch (s3Err) {
+          console.error(`[S3 Upload] Direct R2 upload failed:`, s3Err.message);
         }
-      } catch (workerErr) {
-        console.warn(`[Worker Upload] Failed uploading via Worker PUT:`, workerErr.message);
       }
-    }
-
-    // Method B: Fallback to direct R2 S3 SDK upload (if Worker API key not provided or failed)
-    if (!uploaded && s3) {
-      try {
-        console.log(`[S3 Upload] Uploading cape for user ${decoded.username || decoded.id} directly to R2 bucket (timeout: 10s)...`);
-        await timeoutPromise(10000, s3.send(new PutObjectCommand({
-          Bucket: process.env.R2_BUCKET_NAME,
-          Key: filename,
-          Body: req.file.buffer,
-          ContentType: 'image/png',
-        })));
-        const baseUrl = process.env.R2_PUBLIC_URL.endsWith('/') 
-          ? process.env.R2_PUBLIC_URL.slice(0, -1) 
-          : process.env.R2_PUBLIC_URL;
-        capeUrl = `${baseUrl}/${filename}?v=${Date.now()}`;
-        uploaded = true;
-        console.log(`[S3 Upload] Uploaded successfully to R2 directly: ${capeUrl}`);
-      } catch (s3Err) {
-        console.error(`[S3 Upload] Direct R2 upload failed:`, s3Err.message);
+    } else {
+      if (!res.destroyed && !res.headersSent) {
+        res.status(400).json({ error: 'NoFileOrUrl', errorMessage: 'Не передан файл или URL плаща' });
       }
+      return;
     }
 
     if (!uploaded) {
