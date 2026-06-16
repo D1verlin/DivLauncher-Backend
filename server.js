@@ -303,7 +303,7 @@ app.post('/api/login', asyncHandler(async (req, res) => {
   }
 
   const token = jwt.sign({ id: user.id, username: user.username, uuid: user.uuid, is_admin: user.is_admin }, JWT_SECRET, { expiresIn: '7d' });
-  res.json({ token, user: { username: user.username, uuid: user.uuid, skin_url: user.skin_url, cape_url: user.cape_url, is_admin: user.is_admin } });
+  res.json({ token, user: { id: user.id, username: user.username, uuid: user.uuid, skin_url: user.skin_url, cape_url: user.cape_url, is_admin: user.is_admin, badge: user.badge } });
 }));
 
 app.get('/api/profile', asyncHandler(async (req, res) => {
@@ -314,7 +314,7 @@ app.get('/api/profile', asyncHandler(async (req, res) => {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     const db = await getDb();
-    const user = await db.get('SELECT username, uuid, skin_url, cape_url, is_admin FROM users WHERE id = ?', [decoded.id]);
+    const user = await db.get('SELECT id, username, uuid, skin_url, cape_url, is_admin, badge FROM users WHERE id = ?', [decoded.id]);
     res.json(user);
   } catch (err) {
     res.status(401).send();
@@ -437,7 +437,7 @@ app.get('/api/admin/users', asyncHandler(async (req, res) => {
     const currentUser = await db.get('SELECT is_admin FROM users WHERE id = ?', [decoded.id]);
     if (!currentUser || !currentUser.is_admin) return res.status(403).json({ error: 'Not an admin' });
     
-    const users = await db.all('SELECT id, username, uuid, skin_url, cape_url, is_admin FROM users');
+    const users = await db.all('SELECT id, username, uuid, skin_url, cape_url, is_admin, badge FROM users');
     res.json(users);
   } catch (err) {
     res.status(401).send();
@@ -460,6 +460,45 @@ app.delete('/api/admin/users/:id', asyncHandler(async (req, res) => {
     }
     await db.run('DELETE FROM users WHERE id = ?', [req.params.id]);
     res.json({ message: 'User deleted' });
+  } catch (err) {
+    res.status(401).send();
+  }
+}));
+
+app.put('/api/admin/users/:id', asyncHandler(async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).send();
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const db = await getDb();
+    const currentUser = await db.get('SELECT is_admin FROM users WHERE id = ?', [decoded.id]);
+    if (!currentUser || !currentUser.is_admin) return res.status(403).json({ error: 'Not an admin' });
+
+    const { is_admin, badge } = req.body;
+    
+    // Prevent demoting yourself to avoid losing admin access
+    if (parseInt(req.params.id) === decoded.id && is_admin !== undefined && parseInt(is_admin) === 0) {
+      return res.status(400).json({ error: 'Cannot demote yourself' });
+    }
+
+    const updates = [];
+    const params = [];
+    if (is_admin !== undefined) {
+      updates.push('is_admin = ?');
+      params.push(is_admin ? 1 : 0);
+    }
+    if (badge !== undefined) {
+      updates.push('badge = ?');
+      params.push(badge === '' || badge === null ? null : badge);
+    }
+
+    if (updates.length > 0) {
+      params.push(req.params.id);
+      await db.run(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, params);
+    }
+
+    res.json({ message: 'User updated successfully' });
   } catch (err) {
     res.status(401).send();
   }

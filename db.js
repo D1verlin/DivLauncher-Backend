@@ -38,12 +38,19 @@ async function getDb() {
         cape_url TEXT,
         access_token TEXT,
         client_token TEXT,
-        is_admin INTEGER DEFAULT 0
+        is_admin INTEGER DEFAULT 0,
+        badge TEXT DEFAULT NULL
       )
     `);
 
     try {
       await dbInstance.exec(`ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0`);
+    } catch (e) {
+      // Column might already exist, ignore
+    }
+
+    try {
+      await dbInstance.exec(`ALTER TABLE users ADD COLUMN badge TEXT DEFAULT NULL`);
     } catch (e) {
       // Column might already exist, ignore
     }
