@@ -47,6 +47,21 @@ async function getDb() {
     } catch (e) {
       // Column might already exist, ignore
     }
+
+    try {
+      await dbInstance.run(`
+        UPDATE users 
+        SET skin_url = REPLACE(skin_url, 'https://skins.diverlin.ru/skins/', '/uploads/skins/') 
+        WHERE skin_url LIKE 'https://skins.diverlin.ru/skins/%'
+      `);
+      await dbInstance.run(`
+        UPDATE users 
+        SET cape_url = REPLACE(cape_url, 'https://skins.diverlin.ru/capes/', '/uploads/capes/') 
+        WHERE cape_url LIKE 'https://skins.diverlin.ru/capes/%'
+      `);
+    } catch (migrationErr) {
+      console.error('Database migration failed:', migrationErr.message);
+    }
   }
   
   return dbInstance;

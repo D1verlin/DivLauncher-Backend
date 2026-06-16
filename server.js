@@ -15,27 +15,23 @@ if (dotenvResult.error) {
   console.log('Dotenv parsed PORT:', dotenvResult.parsed ? dotenvResult.parsed.PORT : 'undefined');
 }
 console.log('Process env PORT:', process.env.PORT);
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
-
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Route rewrite middleware to support Yggdrasil apiRoot paths from CustomSkinLoader
+app.use((req, res, next) => {
+  if (req.url.startsWith('/api/yggdrasil/sessionserver')) {
+    req.url = req.url.replace('/api/yggdrasil/sessionserver', '/sessionserver');
+  }
+  next();
+});
+
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Helper to handle async express routes and catch errors
 const asyncHandler = fn => (req, res, next) => {
   Promise.resolve(fn(req, res, next)).catch(next);
-};
-
-// Promise timeout helper
-const timeoutPromise = (ms, promise) => {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('S3 Request Timeout')), ms);
-    promise.then(
-      (res) => { clearTimeout(timer); resolve(res); },
-      (err) => { clearTimeout(timer); reject(err); }
-    );
-  });
 };
 
 // --- Swagger UI Documentation ---
@@ -93,23 +89,13 @@ app.get('/', (req, res) => {
 const uploadLocal = multer({ dest: 'uploads/' });
 const uploadMemory = multer({ storage: multer.memoryStorage() });
 
-// R2 Setup
-let s3 = null;
-if (process.env.R2_ACCOUNT_ID) {
-  s3 = new S3Client({
-    region: 'auto',
-    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    credentials: {
-      accessKeyId: process.env.R2_ACCESS_KEY_ID,
-      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
-    },
-  });
-}
-
-// Create uploads folder if not exists
-if (!fs.existsSync('uploads')) {
-  fs.mkdirSync('uploads');
-}
+// Create uploads directories if they don't exist
+const uploadsDir = path.join(__dirname, 'uploads');
+const skinsDir = path.join(uploadsDir, 'skins');
+const capesDir = path.join(uploadsDir, 'capes');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
+if (!fs.existsSync(skinsDir)) fs.mkdirSync(skinsDir);
+if (!fs.existsSync(capesDir)) fs.mkdirSync(capesDir);
 
 const JWT_SECRET = 'your-super-secret-key';
 const SERVER_DOMAIN = 'http://localhost:3000'; // Change to actual domain in prod
@@ -127,14 +113,18 @@ const getFullUrl = (req, url) => {
 
 // --- Yggdrasil API Endpoints ---
 
-app.get('/api/yggdrasil', (req, res) => {
+app.get(['/api/yggdrasil', '/api/yggdrasil/'], (req, res) => {
+  const host = req.get('host');
+  const domain = host ? host.split(':')[0] : 'localhost';
+  const domains = new Set(["localhost", "127.0.0.1", "mcauth.diverlin.ru", "diverlin.ru", domain]);
+  
   res.json({
     meta: {
       serverName: "DivLauncher Auth",
       implementationName: "divlauncher-auth",
       implementationVersion: "1.0.0"
     },
-    skinDomains: ["localhost", "127.0.0.1"],
+    skinDomains: Array.from(domains),
     signaturePublickey: "" // For authlib-injector signature verification if needed
   });
 });
