@@ -19,6 +19,12 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Request logger middleware
+app.use((req, res, next) => {
+  console.log(`[REQUEST] ${req.method} ${req.url} - Content-Type: ${req.headers['content-type']}`);
+  next();
+});
+
 // Route rewrite middleware to support Yggdrasil apiRoot paths from CustomSkinLoader
 app.use((req, res, next) => {
   if (req.url.startsWith('/api/yggdrasil/sessionserver')) {
@@ -315,8 +321,15 @@ app.get('/api/profile', asyncHandler(async (req, res) => {
   }
 }));
 
-app.post('/api/profile/skin', uploadMemory.single('skin'), asyncHandler(async (req, res) => {
-  if (req.destroyed || res.destroyed) return;
+app.post('/api/profile/skin', (req, res, next) => {
+  console.log('[BACKEND] /api/profile/skin: Multer parsing starting...');
+  uploadMemory.single('skin')(req, res, (err) => {
+    console.log('[BACKEND] /api/profile/skin: Multer parsing finished. Error:', err || 'none');
+    if (err) return next(err);
+    next();
+  });
+}, asyncHandler(async (req, res) => {
+  console.log('[BACKEND] /api/profile/skin: Main handler starting...');
   const authHeader = req.headers.authorization;
   if (!authHeader) {
     if (!res.destroyed && !res.headersSent) {
@@ -328,6 +341,7 @@ app.post('/api/profile/skin', uploadMemory.single('skin'), asyncHandler(async (r
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
+    console.log('[BACKEND] /api/profile/skin: Token decoded successfully, user id:', decoded.id);
     if (!req.file) {
       if (!res.destroyed && !res.headersSent) {
         res.status(400).json({ error: 'NoFile', errorMessage: 'Не передан файл скина' });
@@ -341,25 +355,34 @@ app.post('/api/profile/skin', uploadMemory.single('skin'), asyncHandler(async (r
     }
     const targetPath = path.join(targetDir, `${decoded.id}.png`);
     fs.writeFileSync(targetPath, req.file.buffer);
+    console.log('[BACKEND] /api/profile/skin: File written to disk:', targetPath);
 
     const skinUrl = `/uploads/skins/${decoded.id}.png?v=${Date.now()}`;
 
     const db = await getDb();
     await db.run('UPDATE users SET skin_url = ? WHERE id = ?', [skinUrl, decoded.id]);
+    console.log('[BACKEND] /api/profile/skin: DB updated with skinUrl:', skinUrl);
     
     if (!res.destroyed && !res.headersSent) {
       res.json({ message: 'Skin updated', skin_url: skinUrl });
     }
   } catch (err) {
-    console.error(err);
+    console.error('Skin upload error:', err);
     if (!res.destroyed && !res.headersSent) {
       res.status(500).json({ error: 'UploadFailed', errorMessage: err.message });
     }
   }
 }));
 
-app.post('/api/profile/cape', uploadMemory.single('cape'), asyncHandler(async (req, res) => {
-  if (req.destroyed || res.destroyed) return;
+app.post('/api/profile/cape', (req, res, next) => {
+  console.log('[BACKEND] /api/profile/cape: Multer parsing starting...');
+  uploadMemory.single('cape')(req, res, (err) => {
+    console.log('[BACKEND] /api/profile/cape: Multer parsing finished. Error:', err || 'none');
+    if (err) return next(err);
+    next();
+  });
+}, asyncHandler(async (req, res) => {
+  console.log('[BACKEND] /api/profile/cape: Main handler starting...');
   const authHeader = req.headers.authorization;
   if (!authHeader) {
     if (!res.destroyed && !res.headersSent) {
@@ -371,6 +394,7 @@ app.post('/api/profile/cape', uploadMemory.single('cape'), asyncHandler(async (r
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
+    console.log('[BACKEND] /api/profile/cape: Token decoded successfully, user id:', decoded.id);
     if (!req.file) {
       if (!res.destroyed && !res.headersSent) {
         res.status(400).json({ error: 'NoFile', errorMessage: 'Не передан файл плаща' });
@@ -384,11 +408,13 @@ app.post('/api/profile/cape', uploadMemory.single('cape'), asyncHandler(async (r
     }
     const targetPath = path.join(targetDir, `${decoded.id}.png`);
     fs.writeFileSync(targetPath, req.file.buffer);
+    console.log('[BACKEND] /api/profile/cape: File written to disk:', targetPath);
 
     const capeUrl = `/uploads/capes/${decoded.id}.png?v=${Date.now()}`;
 
     const db = await getDb();
     await db.run('UPDATE users SET cape_url = ? WHERE id = ?', [capeUrl, decoded.id]);
+    console.log('[BACKEND] /api/profile/cape: DB updated with capeUrl:', capeUrl);
     
     if (!res.destroyed && !res.headersSent) {
       res.json({ message: 'Cape updated', cape_url: capeUrl });
