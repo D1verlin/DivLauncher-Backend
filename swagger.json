@@ -1,0 +1,733 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "DivLauncher Auth & Yggdrasil API",
+    "version": "1.0.0",
+    "description": "API documentation for the DivLauncher custom authentication and session server (including Yggdrasil API эмуляция для authlib-injector)."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Локальный сервер разработки"
+    }
+  ],
+  "paths": {
+    "/api/register": {
+      "post": {
+        "summary": "Регистрация нового пользователя",
+        "tags": ["Web Frontend API"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": { "type": "string", "example": "player1" },
+                  "password": { "type": "string", "example": "password123" }
+                },
+                "required": ["username", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Пользователь успешно зарегистрирован",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string", "example": "User created" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Имя пользователя уже занято",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": { "type": "string", "example": "Username may already exist" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/login": {
+      "post": {
+        "summary": "Авторизация пользователя (Web API)",
+        "tags": ["Web Frontend API"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": { "type": "string", "example": "player1" },
+                  "password": { "type": "string", "example": "password123" }
+                },
+                "required": ["username", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Успешная авторизация, получен JWT токен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": { "type": "string", "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." },
+                    "user": {
+                      "type": "object",
+                      "properties": {
+                        "username": { "type": "string", "example": "player1" },
+                        "uuid": { "type": "string", "example": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6" },
+                        "skin_url": { "type": "string", "example": "/uploads/1.png" },
+                        "cape_url": { "type": "string", "example": "/uploads/cape-1.png" },
+                        "is_admin": { "type": "integer", "example": 0 }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неверные учетные данные",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": { "type": "string", "example": "Invalid credentials" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile": {
+      "get": {
+        "summary": "Получение информации о профиле авторизованного пользователя",
+        "tags": ["Web Frontend API"],
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Данные профиля",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "username": { "type": "string", "example": "player1" },
+                    "uuid": { "type": "string", "example": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6" },
+                    "skin_url": { "type": "string", "example": "/uploads/1.png" },
+                    "cape_url": { "type": "string", "example": "/uploads/cape-1.png" },
+                    "is_admin": { "type": "integer", "example": 0 }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Не авторизован"
+          }
+        }
+      }
+    },
+    "/api/profile/skin": {
+      "post": {
+        "summary": "Обновление скина пользователя",
+        "tags": ["Web Frontend API"],
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "skin": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Файл скина в формате PNG"
+                  }
+                },
+                "required": ["skin"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Скин обновлен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string", "example": "Skin updated" },
+                    "skin_url": { "type": "string", "example": "/uploads/1.png" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Файл не передан или неверный заголовок авторизации"
+          },
+          "401": {
+            "description": "Не авторизован"
+          }
+        }
+      }
+    },
+    "/api/profile/cape": {
+      "post": {
+        "summary": "Обновление плаща пользователя",
+        "tags": ["Web Frontend API"],
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cape": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Файл плаща в формате PNG"
+                  }
+                },
+                "required": ["cape"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Плащ обновлен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string", "example": "Cape updated" },
+                    "cape_url": { "type": "string", "example": "/uploads/cape-1.png" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Файл не передан или неверный заголовок авторизации"
+          },
+          "401": {
+            "description": "Не авторизован"
+          }
+        }
+      }
+    },
+    "/api/admin/users": {
+      "get": {
+        "summary": "Получение списка всех пользователей (только для админов)",
+        "tags": ["Admin API"],
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Список пользователей",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "integer", "example": 1 },
+                      "username": { "type": "string", "example": "player1" },
+                      "uuid": { "type": "string", "example": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6" },
+                      "skin_url": { "type": "string", "example": "/uploads/1.png" },
+                      "cape_url": { "type": "string", "example": "/uploads/cape-1.png" },
+                      "is_admin": { "type": "integer", "example": 0 }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Не авторизован"
+          },
+          "403": {
+            "description": "Доступ запрещен (не админ)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": { "type": "string", "example": "Not an admin" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/users/{id}": {
+      "delete": {
+        "summary": "Удаление пользователя (только для админов)",
+        "tags": ["Admin API"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID пользователя",
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Пользователь успешно удален",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string", "example": "User deleted" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ошибка удаления (нельзя удалить самого себя)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": { "type": "string", "example": "Cannot delete yourself" }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Не авторизован"
+          },
+          "403": {
+            "description": "Доступ запрещен (не админ)"
+          }
+        }
+      }
+    },
+    "/api/admin/promote/{id}": {
+      "post": {
+        "summary": "Назначение пользователя администратором (только для админов)",
+        "tags": ["Admin API"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "ID пользователя",
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Пользователь повышен до админа",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string", "example": "User promoted to admin" }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Не авторизован"
+          },
+          "403": {
+            "description": "Доступ запрещен (не админ)"
+          }
+        }
+      }
+    },
+    "/api/yggdrasil": {
+      "get": {
+        "summary": "Метаданные сервера Yggdrasil",
+        "description": "Используется клиентами Minecraft и authlib-injector для получения метаданных и публичного ключа подписи.",
+        "tags": ["Yggdrasil API (authlib-injector)"],
+        "responses": {
+          "200": {
+            "description": "Метаданные сервера авторизации",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "serverName": { "type": "string", "example": "DivLauncher Auth" },
+                        "implementationName": { "type": "string", "example": "divlauncher-auth" },
+                        "implementationVersion": { "type": "string", "example": "1.0.0" }
+                      }
+                    },
+                    "skinDomains": {
+                      "type": "array",
+                      "items": { "type": "string", "example": "localhost" }
+                    },
+                    "signaturePublickey": { "type": "string", "example": "" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/authserver/authenticate": {
+      "post": {
+        "summary": "Аутентификация клиента лаунчером",
+        "description": "Клиент Minecraft передает логин и пароль для получения access_token.",
+        "tags": ["Yggdrasil API (authlib-injector)"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": { "type": "string", "example": "player1" },
+                  "password": { "type": "string", "example": "password123" },
+                  "clientToken": { "type": "string", "example": "b47c0b02-53b4-4b53-9a3d-6258f3fb8078" }
+                },
+                "required": ["username", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Успешная аутентификация",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accessToken": { "type": "string", "example": "d059ab56-1e67-432b-8523-1f6135a46123" },
+                    "clientToken": { "type": "string", "example": "b47c0b02-53b4-4b53-9a3d-6258f3fb8078" },
+                    "availableProfiles": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "string", "example": "f81d4fae7dec11d0a76500a0c91e6bf6" },
+                          "name": { "type": "string", "example": "player1" }
+                        }
+                      }
+                    },
+                    "selectedProfile": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "string", "example": "f81d4fae7dec11d0a76500a0c91e6bf6" },
+                        "name": { "type": "string", "example": "player1" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неверные учетные данные",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": { "type": "string", "example": "ForbiddenOperationException" },
+                    "errorMessage": { "type": "string", "example": "Invalid credentials. Invalid username or password." }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/authserver/refresh": {
+      "post": {
+        "summary": "Обновление токена доступа",
+        "description": "Обновляет accessToken по паре accessToken и clientToken.",
+        "tags": ["Yggdrasil API (authlib-injector)"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "accessToken": { "type": "string", "example": "d059ab56-1e67-432b-8523-1f6135a46123" },
+                  "clientToken": { "type": "string", "example": "b47c0b02-53b4-4b53-9a3d-6258f3fb8078" }
+                },
+                "required": ["accessToken", "clientToken"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Токен обновлен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accessToken": { "type": "string", "example": "a4d33452-f472-466d-9781-db2d19ef8f2c" },
+                    "clientToken": { "type": "string", "example": "b47c0b02-53b4-4b53-9a3d-6258f3fb8078" },
+                    "selectedProfile": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "string", "example": "f81d4fae7dec11d0a76500a0c91e6bf6" },
+                        "name": { "type": "string", "example": "player1" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Недействительный токен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": { "type": "string", "example": "ForbiddenOperationException" },
+                    "errorMessage": { "type": "string", "example": "Invalid token." }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/authserver/validate": {
+      "post": {
+        "summary": "Проверка валидности токена доступа",
+        "description": "Проверяет, является ли accessToken валидным.",
+        "tags": ["Yggdrasil API (authlib-injector)"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "accessToken": { "type": "string", "example": "d059ab56-1e67-432b-8523-1f6135a46123" },
+                  "clientToken": { "type": "string", "example": "b47c0b02-53b4-4b53-9a3d-6258f3fb8078" }
+                },
+                "required": ["accessToken"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Токен валиден (нет содержимого)"
+          },
+          "401": {
+            "description": "Токен недействителен",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": { "type": "string", "example": "ForbiddenOperationException" },
+                    "errorMessage": { "type": "string", "example": "Invalid token." }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessionserver/session/minecraft/join": {
+      "post": {
+        "summary": "Вход игрока на сервер Minecraft",
+        "description": "Вызывается клиентом Minecraft перед подключением к игровому серверу для связывания accessToken и serverId.",
+        "tags": ["Session Server API (Minecraft)"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "accessToken": { "type": "string", "example": "d059ab56-1e67-432b-8523-1f6135a46123" },
+                  "selectedProfile": { "type": "string", "example": "f81d4fae7dec11d0a76500a0c91e6bf6", "description": "UUID без дефисов" },
+                  "serverId": { "type": "string", "example": "449646b3f71dfb967a5bf77b1eb210ea2a3f789e" }
+                },
+                "required": ["accessToken", "selectedProfile", "serverId"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Успешный вход на сервер (нет содержимого)"
+          },
+          "401": {
+            "description": "Недействительный токен или профиль",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": { "type": "string", "example": "ForbiddenOperationException" },
+                    "errorMessage": { "type": "string", "example": "Invalid token or profile." }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessionserver/session/minecraft/hasJoined": {
+      "get": {
+        "summary": "Проверка входа игрока (для сервера Minecraft)",
+        "description": "Вызывается сервером Minecraft для проверки подключения клиента по username и serverId.",
+        "tags": ["Session Server API (Minecraft)"],
+        "parameters": [
+          {
+            "name": "username",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "example": "player1"
+          },
+          {
+            "name": "serverId",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "example": "449646b3f71dfb967a5bf77b1eb210ea2a3f789e"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Игрок действительно вошел. Возвращает данные профиля с base64-кодированными текстурами.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string", "example": "f81d4fae7dec11d0a76500a0c91e6bf6" },
+                    "name": { "type": "string", "example": "player1" },
+                    "properties": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": { "type": "string", "example": "textures" },
+                          "value": { "type": "string", "description": "Base64 строка с JSON-описанием скина и плаща" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Игрок не совершал вход"
+          }
+        }
+      }
+    },
+    "/sessionserver/session/minecraft/profile/{uuid}": {
+      "get": {
+        "summary": "Получение текстур профиля по UUID",
+        "description": "Вызывается клиентом для получения скинов/плащей по UUID.",
+        "tags": ["Session Server API (Minecraft)"],
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "required": true,
+            "description": "UUID игрока (без дефисов)",
+            "schema": { "type": "string" },
+            "example": "f81d4fae7dec11d0a76500a0c91e6bf6"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Профиль найден",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string", "example": "f81d4fae7dec11d0a76500a0c91e6bf6" },
+                    "name": { "type": "string", "example": "player1" },
+                    "properties": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": { "type": "string", "example": "textures" },
+                          "value": { "type": "string", "description": "Base64 строка с JSON-описанием скина и плаща" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Профиль не найден"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}

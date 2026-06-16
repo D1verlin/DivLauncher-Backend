@@ -1,0 +1,17 @@
+<VirtualHost *:80>
+    # Укажите ваш домен или поддомен (например, auth.yourdomain.com)
+    ServerName auth.yourdomain.com
+    ServerAdmin admin@yourdomain.com
+
+    # Перенаправление трафика на локальный Express.js сервер (порт 3000)
+    ProxyPreserveHost On
+    ProxyPass / http://127.0.0.1:3000/
+    ProxyPassReverse / http://127.0.0.1:3000/
+
+    # Логирование
+    ErrorLog ${APACHE_LOG_DIR}/divlauncher-auth-error.log
+    CustomLog ${APACHE_LOG_DIR}/divlauncher-auth-access.log combined
+
+    # Настройки CORS (опционально, так как CORS уже настроен в Express)
+    # Header set Access-Control-Allow-Origin "*"
+</VirtualHost>
