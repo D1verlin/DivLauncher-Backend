@@ -1,4 +1,9 @@
-const mysql = require('mysql2/promise');
+let mysql = null;
+try {
+  mysql = require('mysql2/promise');
+} catch (e) {
+  // mysql2 is not installed, which is fine if only using SQLite locally
+}
 
 // Badge to LuckPerms group mapping
 const BADGE_MAP = {
@@ -15,14 +20,14 @@ let pool = null;
 
 function getPool() {
   if (!pool) {
-    const host = process.env.LP_DB_HOST;
-    const user = process.env.LP_DB_USER;
-    const password = process.env.LP_DB_PASS;
-    const database = process.env.LP_DB_NAME;
+    const host = process.env.LP_DB_HOST || '77.239.121.180';
+    const user = process.env.LP_DB_USER || 'luckperms';
+    const password = process.env.LP_DB_PASS || 'luckpermspass';
+    const database = process.env.LP_DB_NAME || 'luckperms';
     const port = process.env.LP_DB_PORT || 3306;
 
-    if (!host || !user || !database) {
-      console.log('[LuckPerms Sync] MySQL database credentials not fully configured. Skipping MySQL integration.');
+    if (!mysql) {
+      console.log('[LuckPerms Sync] The "mysql2" module is not installed. Run "npm install mysql2" to enable database synchronization.');
       return null;
     }
 

@@ -1,0 +1,126 @@
+9|divlauncher-auth  | Error: Cannot find module 'mysql2/promise'
+9|divlauncher-auth  | Require stack:
+9|divlauncher-auth  | - /var/www/divlauncher-auth/luckperms.js
+9|divlauncher-auth  | - /var/www/divlauncher-auth/server.js
+9|divlauncher-auth  |     at Module._resolveFilename (node:internal/modules/cjs/loader:1420:15)
+9|divlauncher-auth  |     at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+9|divlauncher-auth  |     at require (node:internal/modules/helpers:152:16)
+9|divlauncher-auth  |     at Object.<anonymous> (/var/www/divlauncher-auth/luckperms.js:1:15)
+9|divlauncher-auth  |     at Module._compile (node:internal/modules/cjs/loader:1760:14)
+9|divlauncher-auth  |     at Object..js (node:internal/modules/cjs/loader:1893:10)
+9|divlauncher-auth  |     at Module.load (node:internal/modules/cjs/loader:1480:32)
+9|divlauncher-auth  |     at Module._load (node:internal/modules/cjs/loader:1299:12)
+9|divlauncher-auth  |     at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+9|divlauncher-auth  |     at wrapModuleLoad (node:internal/modules/cjs/loader:244:24)
+9|divlauncher-auth  | Error: Cannot find module 'mysql2/promise'
+9|divlauncher-auth  | Require stack:
+9|divlauncher-auth  | - /var/www/divlauncher-auth/luckperms.js
+9|divlauncher-auth  | - /var/www/divlauncher-auth/server.js
+9|divlauncher-auth  |     at Module._resolveFilename (node:internal/modules/cjs/loader:1420:15)
+9|divlauncher-auth  |     at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+9|divlauncher-auth  |     at require (node:internal/modules/helpers:152:16)
+9|divlauncher-auth  |     at Object.<anonymous> (/var/www/divlauncher-auth/luckperms.js:1:15)
+9|divlauncher-auth  |     at Module._compile (node:internal/modules/cjs/loader:1760:14)
+9|divlauncher-auth  |     at Object..js (node:internal/modules/cjs/loader:1893:10)
+9|divlauncher-auth  |     at Module.load (node:internal/modules/cjs/loader:1480:32)
+9|divlauncher-auth  |     at Module._load (node:internal/modules/cjs/loader:1299:12)
+9|divlauncher-auth  |     at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+9|divlauncher-auth  |     at wrapModuleLoad (node:internal/modules/cjs/loader:244:24)
+9|divlauncher-auth  | Error: Cannot find module 'mysql2/promise'
+9|divlauncher-auth  | Require stack:
+9|divlauncher-auth  | - /var/www/divlauncher-auth/luckperms.js
+9|divlauncher-auth  | - /var/www/divlauncher-auth/server.js
+9|divlauncher-auth  |     at Module._resolveFilename (node:internal/modules/cjs/loader:1420:15)
+9|divlauncher-auth  |     at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+9|divlauncher-auth  |     at require (node:internal/modules/helpers:152:16)
+9|divlauncher-auth  |     at Object.<anonymous> (/var/www/divlauncher-auth/luckperms.js:1:15)
+9|divlauncher-auth  |     at Module._compile (node:internal/modules/cjs/loader:1760:14)
+9|divlauncher-auth  |     at Object..js (node:internal/modules/cjs/loader:1893:10)
+9|divlauncher-auth  |     at Module.load (node:internal/modules/cjs/loader:1480:32)
+9|divlauncher-auth  |     at Module._load (node:internal/modules/cjs/loader:1299:12)
+9|divlauncher-auth  |     at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+9|divlauncher-auth  |     at wrapModuleLoad (node:internal/modules/cjs/loader:244:24)
+9|divlauncher-auth  | Error: Cannot find module 'mysql2/promise'
+9|divlauncher-auth  | Require stack:
+9|divlauncher-auth  | - /var/www/divlauncher-auth/luckperms.js
+9|divlauncher-auth  | - /var/www/divlauncher-auth/server.js
+9|divlauncher-auth  |     at Module._resolveFilename (node:internal/modules/cjs/loader:1420:15)
+9|divlauncher-auth  |     at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+9|divlauncher-auth  |     at require (node:internal/modules/helpers:152:16)
+9|divlauncher-auth  |     at Object.<anonymous> (/var/www/divlauncher-auth/luckperms.js:1:15)
+9|divlauncher-auth  |     at Module._compile (node:internal/modules/cjs/loader:1760:14)
+9|divlauncher-auth  |     at Object..js (node:internal/modules/cjs/loader:1893:10)
+9|divlauncher-auth  |     at Module.load (node:internal/modules/cjs/loader:1480:32)
+9|divlauncher-auth  |     at Module._load (node:internal/modules/cjs/loader:1299:12)
+9|divlauncher-auth  |     at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+9|divlauncher-auth  |     at wrapModuleLoad (node:internal/modules/cjs/loader:244:24)
+9|divlauncher-auth  | Error: Cannot find module 'mysql2/promise'
+9|divlauncher-auth  | Require stack:
+9|divlauncher-auth  | - /var/www/divlauncher-auth/luckperms.js
+9|divlauncher-auth  | - /var/www/divlauncher-auth/server.js
+9|divlauncher-auth  |     at Module._resolveFilename (node:internal/modules/cjs/loader:1420:15)
+9|divlauncher-auth  |     at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+9|divlauncher-auth  |     at require (node:internal/modules/helpers:152:16)
+9|divlauncher-auth  |     at Object.<anonymous> (/var/www/divlauncher-auth/luckperms.js:1:15)
+9|divlauncher-auth  |     at Module._compile (node:internal/modules/cjs/loader:1760:14)
+9|divlauncher-auth  |     at Object..js (node:internal/modules/cjs/loader:1893:10)
+9|divlauncher-auth  |     at Module.load (node:internal/modules/cjs/loader:1480:32)
+9|divlauncher-auth  |     at Module._load (node:internal/modules/cjs/loader:1299:12)
+9|divlauncher-auth  |     at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+9|divlauncher-auth  |     at wrapModuleLoad (node:internal/modules/cjs/loader:244:24)
+9|divlauncher-auth  | Error: Cannot find module 'mysql2/promise'
+9|divlauncher-auth  | Require stack:
+9|divlauncher-auth  | - /var/www/divlauncher-auth/luckperms.js
+9|divlauncher-auth  | - /var/www/divlauncher-auth/server.js
+9|divlauncher-auth  |     at Module._resolveFilename (node:internal/modules/cjs/loader:1420:15)
+9|divlauncher-auth  |     at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+9|divlauncher-auth  |     at require (node:internal/modules/helpers:152:16)
+9|divlauncher-auth  |     at Object.<anonymous> (/var/www/divlauncher-auth/luckperms.js:1:15)
+9|divlauncher-auth  |     at Module._compile (node:internal/modules/cjs/loader:1760:14)
+9|divlauncher-auth  |     at Object..js (node:internal/modules/cjs/loader:1893:10)
+9|divlauncher-auth  |     at Module.load (node:internal/modules/cjs/loader:1480:32)
+9|divlauncher-auth  |     at Module._load (node:internal/modules/cjs/loader:1299:12)
+9|divlauncher-auth  |     at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+9|divlauncher-auth  |     at wrapModuleLoad (node:internal/modules/cjs/loader:244:24)
+9|divlauncher-auth  | Error: Cannot find module 'mysql2/promise'
+9|divlauncher-auth  | Require stack:
+9|divlauncher-auth  | - /var/www/divlauncher-auth/luckperms.js
+9|divlauncher-auth  | - /var/www/divlauncher-auth/server.js
+9|divlauncher-auth  |     at Module._resolveFilename (node:internal/modules/cjs/loader:1420:15)
+9|divlauncher-auth  |     at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+9|divlauncher-auth  |     at require (node:internal/modules/helpers:152:16)
+9|divlauncher-auth  |     at Object.<anonymous> (/var/www/divlauncher-auth/luckperms.js:1:15)
+9|divlauncher-auth  |     at Module._compile (node:internal/modules/cjs/loader:1760:14)
+9|divlauncher-auth  |     at Object..js (node:internal/modules/cjs/loader:1893:10)
+9|divlauncher-auth  |     at Module.load (node:internal/modules/cjs/loader:1480:32)
+9|divlauncher-auth  |     at Module._load (node:internal/modules/cjs/loader:1299:12)
+9|divlauncher-auth  |     at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+9|divlauncher-auth  |     at wrapModuleLoad (node:internal/modules/cjs/loader:244:24)
+9|divlauncher-auth  | Error: Cannot find module 'mysql2/promise'
+9|divlauncher-auth  | Require stack:
+9|divlauncher-auth  | - /var/www/divlauncher-auth/luckperms.js
+9|divlauncher-auth  | - /var/www/divlauncher-auth/server.js
+9|divlauncher-auth  |     at Module._resolveFilename (node:internal/modules/cjs/loader:1420:15)
+9|divlauncher-auth  |     at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+9|divlauncher-auth  |     at require (node:internal/modules/helpers:152:16)
+9|divlauncher-auth  |     at Object.<anonymous> (/var/www/divlauncher-auth/luckperms.js:1:15)
+9|divlauncher-auth  |     at Module._compile (node:internal/modules/cjs/loader:1760:14)
+9|divlauncher-auth  |     at Object..js (node:internal/modules/cjs/loader:1893:10)
+9|divlauncher-auth  |     at Module.load (node:internal/modules/cjs/loader:1480:32)
+9|divlauncher-auth  |     at Module._load (node:internal/modules/cjs/loader:1299:12)
+9|divlauncher-auth  |     at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+9|divlauncher-auth  |     at wrapModuleLoad (node:internal/modules/cjs/loader:244:24)
+9|divlauncher-auth  | Error: Cannot find module 'mysql2/promise'
+9|divlauncher-auth  | Require stack:
+9|divlauncher-auth  | - /var/www/divlauncher-auth/luckperms.js
+9|divlauncher-auth  | - /var/www/divlauncher-auth/server.js
+9|divlauncher-auth  |     at Module._resolveFilename (node:internal/modules/cjs/loader:1420:15)
+9|divlauncher-auth  |     at Hook._require.Module.require (/usr/lib/node_modules/pm2/node_modules/require-in-the-middle/index.js:81:25)
+9|divlauncher-auth  |     at require (node:internal/modules/helpers:152:16)
+9|divlauncher-auth  |     at Object.<anonymous> (/var/www/divlauncher-auth/luckperms.js:1:15)
+9|divlauncher-auth  |     at Module._compile (node:internal/modules/cjs/loader:1760:14)
+9|divlauncher-auth  |     at Object..js (node:internal/modules/cjs/loader:1893:10)
+9|divlauncher-auth  |     at Module.load (node:internal/modules/cjs/loader:1480:32)
+9|divlauncher-auth  |     at Module._load (node:internal/modules/cjs/loader:1299:12)
+9|divlauncher-auth  |     at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+9|divlauncher-auth  |     at wrapModuleLoad (node:internal/modules/cjs/loader:244:24)
