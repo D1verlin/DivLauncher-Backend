@@ -41,6 +41,43 @@ const asyncHandler = fn => (req, res, next) => {
   Promise.resolve(fn(req, res, next)).catch(next);
 };
 
+// --- Direct Skin & Cape Retrieval APIs by Username ---
+
+app.get('/api/skins/:username', asyncHandler(async (req, res) => {
+  const username = req.params.username.replace(/\.png$/i, '');
+  const db = await getDb();
+  const user = await db.get('SELECT skin_url FROM users WHERE username = ?', [username]);
+
+  if (!user || !user.skin_url) {
+    // Redirect to default Mojang Steve skin
+    return res.redirect('https://textures.minecraft.net/texture/1a65f6c2084c7e6a57564619379d71c4c82b4dfa666ee3b1a2080a424af6e8c');
+  }
+
+  const relativePath = user.skin_url.split('?')[0];
+  const absolutePath = path.join(__dirname, relativePath);
+  if (fs.existsSync(absolutePath)) {
+    return res.sendFile(absolutePath);
+  }
+  res.redirect('https://textures.minecraft.net/texture/1a65f6c2084c7e6a57564619379d71c4c82b4dfa666ee3b1a2080a424af6e8c');
+}));
+
+app.get('/api/capes/:username', asyncHandler(async (req, res) => {
+  const username = req.params.username.replace(/\.png$/i, '');
+  const db = await getDb();
+  const user = await db.get('SELECT cape_url FROM users WHERE username = ?', [username]);
+
+  if (!user || !user.cape_url) {
+    return res.status(404).send('Cape not found');
+  }
+
+  const relativePath = user.cape_url.split('?')[0];
+  const absolutePath = path.join(__dirname, relativePath);
+  if (fs.existsSync(absolutePath)) {
+    return res.sendFile(absolutePath);
+  }
+  res.status(404).send('Cape file not found');
+}));
+
 // --- Swagger UI Documentation ---
 app.get('/api-docs/swagger.json', (req, res) => {
   res.sendFile(path.join(__dirname, 'swagger.json'));
