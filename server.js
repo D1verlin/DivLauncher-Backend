@@ -157,11 +157,12 @@ const getFullUrl = (req, url) => {
 
 // --- Yggdrasil API Endpoints ---
 
-app.get(['/api/yggdrasil', '/api/yggdrasil/'], (req, res) => {
+app.get(['/api/yggdrasil', '/api/yggdrasil/'], asyncHandler(async (req, res) => {
   const host = req.get('host');
   const domain = host ? host.split(':')[0] : 'localhost';
   const domains = new Set(["localhost", "127.0.0.1", "mcauth.diverlin.ru", "diverlin.ru", domain]);
   
+  const db = await getDb();
   res.json({
     meta: {
       serverName: "DivLauncher Auth",
@@ -169,9 +170,9 @@ app.get(['/api/yggdrasil', '/api/yggdrasil/'], (req, res) => {
       implementationVersion: "1.0.0"
     },
     skinDomains: Array.from(domains),
-    signaturePublickey: "" // For authlib-injector signature verification if needed
+    signaturePublicKey: db.publicKey || "" // For authlib-injector signature verification
   });
-});
+}));
 
 app.post('/authserver/authenticate', asyncHandler(async (req, res) => {
   const { username, password, clientToken = uuidv4() } = req.body;
@@ -269,16 +270,24 @@ app.get('/sessionserver/session/minecraft/hasJoined', asyncHandler(async (req, r
   if (user.cape_url) textures.textures.CAPE = { url: getFullUrl(req, user.cape_url) };
 
   const texturesBase64 = Buffer.from(JSON.stringify(textures)).toString('base64');
+  const properties = [
+    {
+      name: "textures",
+      value: texturesBase64
+    }
+  ];
+
+  if (db.privateKey) {
+    const crypto = require('crypto');
+    const sign = crypto.createSign('sha1WithRSAEncryption');
+    sign.update(texturesBase64);
+    properties[0].signature = sign.sign(db.privateKey, 'base64');
+  }
 
   res.json({
     id: stripUUID(user.uuid),
     name: user.username,
-    properties: [
-      {
-        name: "textures",
-        value: texturesBase64
-      }
-    ]
+    properties
   });
 }));
 
@@ -302,16 +311,24 @@ app.get('/sessionserver/session/minecraft/profile/:uuid', asyncHandler(async (re
   if (user.cape_url) textures.textures.CAPE = { url: getFullUrl(req, user.cape_url) };
 
   const texturesBase64 = Buffer.from(JSON.stringify(textures)).toString('base64');
+  const properties = [
+    {
+      name: "textures",
+      value: texturesBase64
+    }
+  ];
+
+  if (db.privateKey) {
+    const crypto = require('crypto');
+    const sign = crypto.createSign('sha1WithRSAEncryption');
+    sign.update(texturesBase64);
+    properties[0].signature = sign.sign(db.privateKey, 'base64');
+  }
 
   res.json({
     id: stripUUID(user.uuid),
     name: user.username,
-    properties: [
-      {
-        name: "textures",
-        value: texturesBase64
-      }
-    ]
+    properties
   });
 }));
 

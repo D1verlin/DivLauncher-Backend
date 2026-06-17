@@ -88,6 +88,42 @@ async function getDb() {
     } catch (migrationErr) {
       console.error('Database migration failed:', migrationErr.message);
     }
+
+    try {
+      await dbInstance.exec(`
+        CREATE TABLE IF NOT EXISTS server_keys (
+          key_name TEXT PRIMARY KEY,
+          key_value TEXT NOT NULL
+        )
+      `);
+
+      let privateKeyRow = await dbInstance.get('SELECT key_value FROM server_keys WHERE key_name = ?', ['private_key']);
+      let publicKeyRow = await dbInstance.get('SELECT key_value FROM server_keys WHERE key_name = ?', ['public_key']);
+
+      if (!privateKeyRow || !publicKeyRow) {
+        const crypto = require('crypto');
+        const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+          modulusLength: 2048,
+          publicKeyEncoding: {
+            type: 'spki',
+            format: 'pem'
+          },
+          privateKeyEncoding: {
+            type: 'pkcs8',
+            format: 'pem'
+          }
+        });
+        await dbInstance.run('INSERT OR REPLACE INTO server_keys (key_name, key_value) VALUES (?, ?)', ['private_key', privateKey]);
+        await dbInstance.run('INSERT OR REPLACE INTO server_keys (key_name, key_value) VALUES (?, ?)', ['public_key', publicKey]);
+        dbInstance.privateKey = privateKey;
+        dbInstance.publicKey = publicKey;
+      } else {
+        dbInstance.privateKey = privateKeyRow.key_value;
+        dbInstance.publicKey = publicKeyRow.key_value;
+      }
+    } catch (keyErr) {
+      console.error('Failed to initialize signature keys:', keyErr.message);
+    }
   }
   
   return dbInstance;
