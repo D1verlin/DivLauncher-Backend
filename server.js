@@ -853,6 +853,12 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Auth server running on port ${PORT}`);
+  try {
+    const { initializeLuckPermsDB } = require('./luckperms');
+    await initializeLuckPermsDB();
+  } catch (err) {
+    console.error('Failed to initialize LuckPerms database on startup:', err);
+  }
 });

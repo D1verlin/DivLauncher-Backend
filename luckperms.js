@@ -172,5 +172,18 @@ async function syncLuckPermsUser(rawUuid, username, badge) {
 }
 
 module.exports = {
-  syncLuckPermsUser
+  syncLuckPermsUser,
+  initializeLuckPermsDB: async () => {
+    const connectionPool = getPool();
+    if (!connectionPool) return;
+    let conn;
+    try {
+      conn = await connectionPool.getConnection();
+      await initializeLuckPermsDB(conn);
+    } catch (err) {
+      console.error('[LuckPerms Init] Startup error:', err.message);
+    } finally {
+      if (conn) conn.release();
+    }
+  }
 };
