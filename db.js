@@ -44,6 +44,18 @@ async function getDb() {
       )
     `);
 
+    await dbInstance.exec(`
+      CREATE TABLE IF NOT EXISTS user_stats (
+        user_id INTEGER PRIMARY KEY,
+        playtime_seconds INTEGER DEFAULT 0,
+        blocks_mined INTEGER DEFAULT 0,
+        mobs_killed INTEGER DEFAULT 0,
+        deaths INTEGER DEFAULT 0,
+        achievements TEXT,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     try {
       await dbInstance.exec(`ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0`);
     } catch (e) {

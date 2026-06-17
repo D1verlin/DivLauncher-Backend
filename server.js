@@ -4,6 +4,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const { getDb } = require('./db');
+const { syncLuckPermsUser } = require('./luckperms');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -297,13 +298,41 @@ app.post('/api/login', asyncHandler(async (req, res) => {
   const { username, password } = req.body;
   const db = await getDb();
 
-  const user = await db.get('SELECT * FROM users WHERE username = ?', [username]);
+  const user = await db.get(`
+    SELECT u.*, s.playtime_seconds, s.blocks_mined, s.mobs_killed, s.deaths, s.achievements
+    FROM users u
+    LEFT JOIN user_stats s ON u.id = s.user_id
+    WHERE u.username = ?
+  `, [username]);
+
   if (!user || !(await bcrypt.compare(password, user.password))) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
 
   const token = jwt.sign({ id: user.id, username: user.username, uuid: user.uuid, is_admin: user.is_admin }, JWT_SECRET, { expiresIn: '7d' });
-  res.json({ token, user: { id: user.id, username: user.username, uuid: user.uuid, skin_url: user.skin_url, cape_url: user.cape_url, is_admin: user.is_admin, badge: user.badge, bio: user.bio } });
+  
+  const stats = {
+    playtime_seconds: user.playtime_seconds || 0,
+    blocks_mined: user.blocks_mined || 0,
+    mobs_killed: user.mobs_killed || 0,
+    deaths: user.deaths || 0,
+    achievements_completed: user.achievements ? JSON.parse(user.achievements) : []
+  };
+
+  res.json({
+    token,
+    user: {
+      id: user.id,
+      username: user.username,
+      uuid: user.uuid,
+      skin_url: user.skin_url,
+      cape_url: user.cape_url,
+      is_admin: user.is_admin,
+      badge: user.badge,
+      bio: user.bio,
+      stats
+    }
+  });
 }));
 
 app.get('/api/profile', asyncHandler(async (req, res) => {
@@ -314,7 +343,29 @@ app.get('/api/profile', asyncHandler(async (req, res) => {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     const db = await getDb();
-    const user = await db.get('SELECT id, username, uuid, skin_url, cape_url, is_admin, badge, bio FROM users WHERE id = ?', [decoded.id]);
+    const user = await db.get(`
+      SELECT u.id, u.username, u.uuid, u.skin_url, u.cape_url, u.is_admin, u.badge, u.bio,
+             s.playtime_seconds, s.blocks_mined, s.mobs_killed, s.deaths, s.achievements
+      FROM users u
+      LEFT JOIN user_stats s ON u.id = s.user_id
+      WHERE u.id = ?
+    `, [decoded.id]);
+
+    if (user) {
+      user.stats = {
+        playtime_seconds: user.playtime_seconds || 0,
+        blocks_mined: user.blocks_mined || 0,
+        mobs_killed: user.mobs_killed || 0,
+        deaths: user.deaths || 0,
+        achievements_completed: user.achievements ? JSON.parse(user.achievements) : []
+      };
+      delete user.playtime_seconds;
+      delete user.blocks_mined;
+      delete user.mobs_killed;
+      delete user.deaths;
+      delete user.achievements;
+    }
+
     res.json(user);
   } catch (err) {
     res.status(401).send();
@@ -373,8 +424,30 @@ app.get('/api/users', asyncHandler(async (req, res) => {
   try {
     jwt.verify(token, JWT_SECRET);
     const db = await getDb();
-    const users = await db.all('SELECT username, uuid, skin_url, cape_url, is_admin, badge, bio FROM users');
-    res.json(users);
+    const users = await db.all(`
+      SELECT u.username, u.uuid, u.skin_url, u.cape_url, u.is_admin, u.badge, u.bio,
+             s.playtime_seconds, s.blocks_mined, s.mobs_killed, s.deaths, s.achievements
+      FROM users u
+      LEFT JOIN user_stats s ON u.id = s.user_id
+    `);
+
+    const formattedUsers = users.map(user => {
+      user.stats = {
+        playtime_seconds: user.playtime_seconds || 0,
+        blocks_mined: user.blocks_mined || 0,
+        mobs_killed: user.mobs_killed || 0,
+        deaths: user.deaths || 0,
+        achievements_completed: user.achievements ? JSON.parse(user.achievements) : []
+      };
+      delete user.playtime_seconds;
+      delete user.blocks_mined;
+      delete user.mobs_killed;
+      delete user.deaths;
+      delete user.achievements;
+      return user;
+    });
+
+    res.json(formattedUsers);
   } catch (err) {
     res.status(401).send();
   }
@@ -559,10 +632,19 @@ app.put('/api/admin/users/:id', asyncHandler(async (req, res) => {
     if (updates.length > 0) {
       params.push(req.params.id);
       await db.run(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, params);
+
+      // If badge was updated, sync it with LuckPerms MySQL database in real time
+      if (badge !== undefined) {
+        const updatedUser = await db.get('SELECT username, uuid, badge FROM users WHERE id = ?', [req.params.id]);
+        if (updatedUser) {
+          await syncLuckPermsUser(updatedUser.uuid, updatedUser.username, updatedUser.badge);
+        }
+      }
     }
 
     res.json({ message: 'User updated successfully' });
   } catch (err) {
+    console.error('Error updating user in admin panel:', err);
     res.status(401).send();
   }
 }));
@@ -582,6 +664,91 @@ app.post('/api/admin/promote/:id', asyncHandler(async (req, res) => {
   } catch (err) {
     res.status(401).send();
   }
+}));
+
+// --- In-Game Statistics & Badges Sync API (Server-Only) ---
+
+const verifyServerToken = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  const configuredToken = process.env.SERVER_TOKEN || 'SuperSecretSyncToken123';
+
+  if (!authHeader) {
+    return res.status(401).json({ error: 'Unauthorized', errorMessage: 'Missing authorization header' });
+  }
+
+  const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : authHeader;
+
+  if (token !== configuredToken) {
+    return res.status(403).json({ error: 'Forbidden', errorMessage: 'Invalid server token' });
+  }
+
+  next();
+};
+
+app.post('/api/server/sync-stats', verifyServerToken, asyncHandler(async (req, res) => {
+  const { uuid, username, stats } = req.body;
+  if (!uuid) {
+    return res.status(400).json({ error: 'BadRequest', errorMessage: 'Missing player UUID' });
+  }
+
+  const db = await getDb();
+  
+  // Find user by uuid (ignoring dashes) or username as fallback
+  let user = await db.get(
+    "SELECT id, username, uuid FROM users WHERE REPLACE(uuid, '-', '') = REPLACE(?, '-', '') OR username = ?", 
+    [uuid, uuid, username]
+  );
+  
+  if (!user) {
+    console.log(`[Stats Sync] User with UUID ${uuid} or username ${username} not found in launcher database.`);
+    return res.status(404).json({ error: 'UserNotFound', errorMessage: 'User not registered in launcher' });
+  }
+
+  const playerStats = stats || {};
+  await db.run(
+    `INSERT INTO user_stats (user_id, playtime_seconds, blocks_mined, mobs_killed, deaths, achievements, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(user_id) DO UPDATE SET
+       playtime_seconds = excluded.playtime_seconds,
+       blocks_mined = excluded.blocks_mined,
+       mobs_killed = excluded.mobs_killed,
+       deaths = excluded.deaths,
+       achievements = excluded.achievements,
+       updated_at = CURRENT_TIMESTAMP`,
+    [
+      user.id,
+      playerStats.playtime_seconds || 0,
+      playerStats.blocks_mined || 0,
+      playerStats.mobs_killed || 0,
+      playerStats.deaths || 0,
+      JSON.stringify(playerStats.achievements_completed || [])
+    ]
+  );
+
+  console.log(`[Stats Sync] Synced stats for ${user.username} (${uuid}) successfully.`);
+  res.json({ message: 'Stats synced successfully' });
+}));
+
+app.post('/api/server/award-badge', verifyServerToken, asyncHandler(async (req, res) => {
+  const { uuid, badge } = req.body;
+  if (!uuid || !badge) {
+    return res.status(400).json({ error: 'BadRequest', errorMessage: 'Missing uuid or badge' });
+  }
+
+  const db = await getDb();
+  const user = await db.get("SELECT id, username, uuid, badge FROM users WHERE REPLACE(uuid, '-', '') = REPLACE(?, '-', '')", [uuid, uuid]);
+
+  if (!user) {
+    return res.status(404).json({ error: 'UserNotFound', errorMessage: 'User not found' });
+  }
+
+  await db.run('UPDATE users SET badge = ? WHERE id = ?', [badge, user.id]);
+  console.log(`[Badge Award] Awarded badge "${badge}" to user ${user.username} (${uuid})`);
+
+  // Sync badge to LuckPerms
+  await syncLuckPermsUser(user.uuid, user.username, badge);
+
+  res.json({ message: `Badge ${badge} awarded successfully` });
 }));
 
 // Global error handler middleware
