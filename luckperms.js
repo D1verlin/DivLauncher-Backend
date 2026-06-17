@@ -20,11 +20,11 @@ let pool = null;
 
 function getPool() {
   if (!pool) {
-    const host = process.env.LP_DB_HOST || '77.239.121.180';
-    const user = process.env.LP_DB_USER || 'luckperms';
-    const password = process.env.LP_DB_PASS || 'luckpermspass';
-    const database = process.env.LP_DB_NAME || 'luckperms';
-    const port = process.env.LP_DB_PORT || 3306;
+    const host = '77.239.121.180';
+    const user = 'luckperms';
+    const password = 'luckpermspass';
+    const database = 'luckperms';
+    const port = 3306;
 
     if (!mysql) {
       console.log('[LuckPerms Sync] The "mysql2" module is not installed. Run "npm install mysql2" to enable database synchronization.');
@@ -62,6 +62,46 @@ function formatUUID(uuid) {
   return uuid;
 }
 
+let isDbInitialized = false;
+
+async function initializeLuckPermsDB(conn) {
+  if (isDbInitialized) return;
+  try {
+    const [tables] = await conn.query("SHOW TABLES LIKE 'luckperms_groups'");
+    if (tables.length === 0) {
+      console.log('[LuckPerms Init] Tables do not exist yet. Waiting for Minecraft server to generate them...');
+      return;
+    }
+
+    const groups = ['admin', 'developer', 'vip', 'sponsor', 'helper', 'default'];
+    for (const group of groups) {
+      await conn.query('INSERT IGNORE INTO luckperms_groups (name) VALUES (?)', [group]);
+    }
+
+    const prefixes = [
+      { group: 'admin', priority: 100, text: '&#d62828&l[&#e63946&lАдмин&#d62828&l]&r ' },
+      { group: 'developer', priority: 90, text: '&#7209b7&l[&#b5179e&lРазработчик&#7209b7&l]&r ' },
+      { group: 'vip', priority: 80, text: '&#0096c7&l[&#00f5d4&lVIP&#0096c7&l]&r ' },
+      { group: 'sponsor', priority: 70, text: '&#e85d04&l[&#faa307&lСпонсор&#e85d04&l]&r ' },
+      { group: 'helper', priority: 60, text: '&#0077b6&l[&#00bbf9&lПомощник&#0077b6&l]&r ' }
+    ];
+
+    for (const p of prefixes) {
+      const permission = `prefix.${p.priority}.${p.text}`;
+      await conn.query('DELETE FROM luckperms_group_permissions WHERE name = ? AND permission LIKE "prefix.%"', [p.group]);
+      await conn.query(
+        `INSERT INTO luckperms_group_permissions (name, permission, value, server, world, expiry, contexts)
+         VALUES (?, ?, 1, 'global', 'global', 0, '{}')`,
+        [p.group, permission]
+      );
+    }
+    isDbInitialized = true;
+    console.log('[LuckPerms Init] Groups and prefixes successfully initialized in MySQL.');
+  } catch (err) {
+    console.error('[LuckPerms Init] Failed to initialize groups and prefixes in DB:', err.message);
+  }
+}
+
 /**
  * Synchronizes user permissions and roles in the LuckPerms MySQL database.
  * @param {string} rawUuid User UUID
@@ -84,6 +124,7 @@ async function syncLuckPermsUser(rawUuid, username, badge) {
   let conn;
   try {
     conn = await connectionPool.getConnection();
+    await initializeLuckPermsDB(conn);
     await conn.beginTransaction();
 
     // 1. Delete existing badge groups for this user

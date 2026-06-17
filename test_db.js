@@ -8,11 +8,11 @@ try {
   process.exit(1);
 }
 
-const host = process.env.LP_DB_HOST || '77.239.121.180';
-const port = parseInt(process.env.LP_DB_PORT || 3306);
-const user = process.env.LP_DB_USER || 'luckperms';
-const password = process.env.LP_DB_PASS || 'luckpermspass';
-const database = process.env.LP_DB_NAME || 'luckperms';
+const host = '77.239.121.180';
+const port = 3306;
+const user = 'luckperms';
+const password = 'luckpermspass';
+const database = 'luckperms';
 
 console.log('=== ДИАГНОСТИКА ПОДКЛЮЧЕНИЯ К БАЗЕ ДАННЫХ LUCKPERMS ===');
 console.log(`Хост: ${host}`);
