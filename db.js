@@ -100,7 +100,25 @@ async function getDb() {
       let privateKeyRow = await dbInstance.get('SELECT key_value FROM server_keys WHERE key_name = ?', ['private_key']);
       let publicKeyRow = await dbInstance.get('SELECT key_value FROM server_keys WHERE key_name = ?', ['public_key']);
 
-      if (!privateKeyRow || !publicKeyRow) {
+      let keysValid = false;
+      if (privateKeyRow && publicKeyRow) {
+        try {
+          const crypto = require('crypto');
+          const testData = 'verification-test';
+          const sign = crypto.createSign('sha1WithRSAEncryption');
+          sign.update(testData);
+          const signature = sign.sign(privateKeyRow.key_value, 'base64');
+          
+          const verify = crypto.createVerify('sha1WithRSAEncryption');
+          verify.update(testData);
+          keysValid = verify.verify(publicKeyRow.key_value, signature, 'base64');
+        } catch (e) {
+          keysValid = false;
+        }
+      }
+
+      if (!keysValid) {
+        console.log('Generating fresh matching signature keys...');
         const crypto = require('crypto');
         const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
           modulusLength: 2048,
