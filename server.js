@@ -471,6 +471,45 @@ app.post('/api/profile/bio', asyncHandler(async (req, res) => {
   }
 }));
 
+app.post('/api/profile/sync-stats', asyncHandler(async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).send();
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const { playtime_seconds = 0, blocks_mined = 0, mobs_killed = 0, deaths = 0, achievements = [] } = req.body;
+    const db = await getDb();
+    
+    // Insert or update stats inside user_stats
+    await db.run(`
+      INSERT INTO user_stats (user_id, playtime_seconds, blocks_mined, mobs_killed, deaths, achievements, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(user_id) DO UPDATE SET
+        playtime_seconds = excluded.playtime_seconds,
+        blocks_mined = excluded.blocks_mined,
+        mobs_killed = excluded.mobs_killed,
+        deaths = excluded.deaths,
+        achievements = excluded.achievements,
+        updated_at = CURRENT_TIMESTAMP
+    `, [decoded.id, playtime_seconds, blocks_mined, mobs_killed, deaths, JSON.stringify(achievements)]);
+
+    // Automatically award "Ветеран" badge if playtime >= 50 hours (180000 seconds)
+    if (playtime_seconds >= 50 * 3600) {
+      const user = await db.get("SELECT badge, uuid, username FROM users WHERE id = ?", [decoded.id]);
+      if (user && user.badge !== 'Ветеран') {
+        await db.run('UPDATE users SET badge = ? WHERE id = ?', ['Ветеран', decoded.id]);
+        console.log(`[Badge Auto-Award] Awarded "Ветеран" badge to ${user.username} (Playtime: ${playtime_seconds}s)`);
+        await syncLuckPermsUser(user.uuid, user.username, 'Ветеран');
+      }
+    }
+
+    res.json({ message: 'Stats synced successfully' });
+  } catch (err) {
+    console.error('Stats sync error:', err.message);
+    res.status(401).send();
+  }
+}));
+
 app.get('/api/users', asyncHandler(async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).send();
