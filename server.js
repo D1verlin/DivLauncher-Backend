@@ -846,7 +846,7 @@ app.post('/api/server/award-badge', verifyServerToken, asyncHandler(async (req, 
   res.json({ message: `Badge ${badge} awarded successfully` });
 }));
 
-// --- R2 Client (initialized lazily after dotenv loads) ---
+// --- R2 Client: divlauncher-skins (скины/плащи, существующий) ---
 let r2Client = null;
 function getR2Client() {
   if (!r2Client) {
@@ -862,8 +862,34 @@ function getR2Client() {
   return r2Client;
 }
 
+// --- R2 Client: minecraft (сборки, моды, mods.json) ---
+let r2ModsClient = null;
+function getR2ModsClient() {
+  if (!r2ModsClient) {
+    const accountId = process.env.R2_MODS_ACCOUNT_ID || process.env.R2_ACCOUNT_ID;
+    const accessKey = process.env.R2_MODS_ACCESS_KEY_ID;
+    const secretKey = process.env.R2_MODS_SECRET_ACCESS_KEY;
+    if (!accessKey || accessKey.startsWith('ЗАМЕНИТЕ')) {
+      console.warn('[R2 Mods] R2_MODS_ACCESS_KEY_ID не задан в .env — используем основные credentials');
+    }
+    r2ModsClient = new S3Client({
+      region: 'auto',
+      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId: (accessKey && !accessKey.startsWith('ЗАМЕНИТЕ')) ? accessKey : process.env.R2_ACCESS_KEY_ID,
+        secretAccessKey: (secretKey && !secretKey.startsWith('ЗАМЕНИТЕ')) ? secretKey : process.env.R2_SECRET_ACCESS_KEY
+      }
+    });
+  }
+  return r2ModsClient;
+}
+
 const R2_BUCKET = process.env.R2_BUCKET_NAME || 'minecraft';
 const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || 'https://mc.diverlin.ru';
+
+// Mods bucket constants (may differ from skin bucket)
+const R2_MODS_BUCKET = process.env.R2_MODS_BUCKET_NAME || 'minecraft';
+const R2_MODS_PUBLIC_URL = process.env.R2_MODS_PUBLIC_URL || 'https://mc.diverlin.ru';
 
 // Middleware: check admin JWT
 async function requireAdmin(req, res, next) {
@@ -889,26 +915,28 @@ async function streamToBuffer(stream) {
   return Buffer.concat(chunks);
 }
 
-// --- Admin R2 Routes ---
+// --- Admin R2 Routes (bucket: minecraft) ---
 
 // GET /api/admin/r2/list?prefix=DivLauncher/stalker/mods/
 app.get('/api/admin/r2/list', requireAdmin, asyncHandler(async (req, res) => {
   const { prefix = '' } = req.query;
-  const s3 = getR2Client();
+  console.log(`[R2 list] bucket=${R2_MODS_BUCKET} prefix="${prefix}"`);
+  const s3 = getR2ModsClient();
   const cmd = new ListObjectsV2Command({
-    Bucket: R2_BUCKET,
+    Bucket: R2_MODS_BUCKET,
     Prefix: prefix,
     Delimiter: '/'
   });
   const data = await s3.send(cmd);
+  console.log(`[R2 list] Contents=${data.Contents?.length || 0} Prefixes=${data.CommonPrefixes?.length || 0}`);
   const files = (data.Contents || [])
-    .filter(obj => obj.Key !== prefix) // skip the "folder" itself
+    .filter(obj => obj.Key !== prefix)
     .map(obj => ({
       key: obj.Key,
       name: obj.Key.replace(prefix, ''),
       size: obj.Size,
       lastModified: obj.LastModified,
-      url: `${R2_PUBLIC_URL}/${obj.Key}`
+      url: `${R2_MODS_PUBLIC_URL}/${obj.Key}`
     }));
   const folders = (data.CommonPrefixes || []).map(cp => ({
     key: cp.Prefix,
@@ -930,26 +958,28 @@ app.post('/api/admin/r2/upload', requireAdmin, (req, res, next) => {
   if (!key) return res.status(400).json({ error: 'Missing key query param' });
   if (!req.file) return res.status(400).json({ error: 'No file provided' });
 
-  const s3 = getR2Client();
+  console.log(`[R2 upload] bucket=${R2_MODS_BUCKET} key="${key}" size=${req.file.size}`);
+  const s3 = getR2ModsClient();
   const upload = new Upload({
     client: s3,
     params: {
-      Bucket: R2_BUCKET,
+      Bucket: R2_MODS_BUCKET,
       Key: key,
       Body: req.file.buffer,
       ContentType: req.file.mimetype || 'application/octet-stream'
     }
   });
   await upload.done();
-  res.json({ success: true, key, url: `${R2_PUBLIC_URL}/${key}` });
+  res.json({ success: true, key, url: `${R2_MODS_PUBLIC_URL}/${key}` });
 }));
 
 // DELETE /api/admin/r2/delete?key=DivLauncher/stalker/mods/mymod.jar
 app.delete('/api/admin/r2/delete', requireAdmin, asyncHandler(async (req, res) => {
   const { key } = req.query;
   if (!key) return res.status(400).json({ error: 'Missing key query param' });
-  const s3 = getR2Client();
-  await s3.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+  console.log(`[R2 delete] bucket=${R2_MODS_BUCKET} key="${key}"`);
+  const s3 = getR2ModsClient();
+  await s3.send(new DeleteObjectCommand({ Bucket: R2_MODS_BUCKET, Key: key }));
   res.json({ success: true, key });
 }));
 
@@ -957,18 +987,21 @@ app.delete('/api/admin/r2/delete', requireAdmin, asyncHandler(async (req, res) =
 app.get('/api/admin/r2/mods-json', requireAdmin, asyncHandler(async (req, res) => {
   const { key } = req.query;
   if (!key) return res.status(400).json({ error: 'Missing key' });
-  const s3 = getR2Client();
+  console.log(`[R2 mods-json GET] bucket=${R2_MODS_BUCKET} key="${key}"`);
+  const s3 = getR2ModsClient();
   try {
-    const cmd = new GetObjectCommand({ Bucket: R2_BUCKET, Key: key });
+    const cmd = new GetObjectCommand({ Bucket: R2_MODS_BUCKET, Key: key });
     const data = await s3.send(cmd);
     const buf = await streamToBuffer(data.Body);
+    console.log(`[R2 mods-json GET] success, bytes=${buf.length}`);
     res.setHeader('Content-Type', 'application/json');
     res.send(buf);
   } catch (err) {
-    if (err.name === 'NoSuchKey') {
+    console.error(`[R2 mods-json GET] error: ${err.name} - ${err.message}`);
+    if (err.name === 'NoSuchKey' || err.$metadata?.httpStatusCode === 404) {
       res.json([]);
     } else {
-      throw err;
+      res.status(500).json({ error: err.name, message: err.message });
     }
   }
 }));
@@ -978,14 +1011,15 @@ app.put('/api/admin/r2/mods-json', requireAdmin, asyncHandler(async (req, res) =
   const { key } = req.query;
   if (!key) return res.status(400).json({ error: 'Missing key' });
   const content = typeof req.body === 'string' ? req.body : JSON.stringify(req.body, null, 2);
-  const s3 = getR2Client();
+  console.log(`[R2 mods-json PUT] bucket=${R2_MODS_BUCKET} key="${key}" bytes=${content.length}`);
+  const s3 = getR2ModsClient();
   await s3.send(new PutObjectCommand({
-    Bucket: R2_BUCKET,
+    Bucket: R2_MODS_BUCKET,
     Key: key,
     Body: content,
     ContentType: 'application/json'
   }));
-  res.json({ success: true, key, url: `${R2_PUBLIC_URL}/${key}` });
+  res.json({ success: true, key, url: `${R2_MODS_PUBLIC_URL}/${key}` });
 }));
 
 // Global error handler middleware
