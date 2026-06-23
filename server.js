@@ -8,6 +8,8 @@ const { syncLuckPermsUser } = require('./luckperms');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { S3Client, ListObjectsV2Command, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { Upload } = require('@aws-sdk/lib-storage');
 const dotenvResult = require('dotenv').config({ path: path.join(__dirname, '.env') });
 if (dotenvResult.error) {
   console.log('Dotenv warning: .env file not found or could not be loaded:', dotenvResult.error.message);
@@ -842,6 +844,148 @@ app.post('/api/server/award-badge', verifyServerToken, asyncHandler(async (req, 
   await syncLuckPermsUser(user.uuid, user.username, badge);
 
   res.json({ message: `Badge ${badge} awarded successfully` });
+}));
+
+// --- R2 Client (initialized lazily after dotenv loads) ---
+let r2Client = null;
+function getR2Client() {
+  if (!r2Client) {
+    r2Client = new S3Client({
+      region: 'auto',
+      endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId: process.env.R2_ACCESS_KEY_ID,
+        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
+      }
+    });
+  }
+  return r2Client;
+}
+
+const R2_BUCKET = process.env.R2_BUCKET_NAME || 'minecraft';
+const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || 'https://mc.diverlin.ru';
+
+// Middleware: check admin JWT
+async function requireAdmin(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'Unauthorized' });
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const db = await getDb();
+    const user = await db.get('SELECT is_admin FROM users WHERE id = ?', [decoded.id]);
+    if (!user || !user.is_admin) return res.status(403).json({ error: 'Forbidden' });
+    req.adminId = decoded.id;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+}
+
+// Helper: stream to buffer
+async function streamToBuffer(stream) {
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
+
+// --- Admin R2 Routes ---
+
+// GET /api/admin/r2/list?prefix=DivLauncher/stalker/mods/
+app.get('/api/admin/r2/list', requireAdmin, asyncHandler(async (req, res) => {
+  const { prefix = '' } = req.query;
+  const s3 = getR2Client();
+  const cmd = new ListObjectsV2Command({
+    Bucket: R2_BUCKET,
+    Prefix: prefix,
+    Delimiter: '/'
+  });
+  const data = await s3.send(cmd);
+  const files = (data.Contents || [])
+    .filter(obj => obj.Key !== prefix) // skip the "folder" itself
+    .map(obj => ({
+      key: obj.Key,
+      name: obj.Key.replace(prefix, ''),
+      size: obj.Size,
+      lastModified: obj.LastModified,
+      url: `${R2_PUBLIC_URL}/${obj.Key}`
+    }));
+  const folders = (data.CommonPrefixes || []).map(cp => ({
+    key: cp.Prefix,
+    name: cp.Prefix.replace(prefix, '').replace('/', ''),
+    isFolder: true
+  }));
+  res.json({ files, folders, prefix });
+}));
+
+// POST /api/admin/r2/upload?key=DivLauncher/stalker/mods/mymod.jar
+const uploadR2Memory = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
+app.post('/api/admin/r2/upload', requireAdmin, (req, res, next) => {
+  uploadR2Memory.single('file')(req, res, (err) => {
+    if (err) return next(err);
+    next();
+  });
+}, asyncHandler(async (req, res) => {
+  const { key } = req.query;
+  if (!key) return res.status(400).json({ error: 'Missing key query param' });
+  if (!req.file) return res.status(400).json({ error: 'No file provided' });
+
+  const s3 = getR2Client();
+  const upload = new Upload({
+    client: s3,
+    params: {
+      Bucket: R2_BUCKET,
+      Key: key,
+      Body: req.file.buffer,
+      ContentType: req.file.mimetype || 'application/octet-stream'
+    }
+  });
+  await upload.done();
+  res.json({ success: true, key, url: `${R2_PUBLIC_URL}/${key}` });
+}));
+
+// DELETE /api/admin/r2/delete?key=DivLauncher/stalker/mods/mymod.jar
+app.delete('/api/admin/r2/delete', requireAdmin, asyncHandler(async (req, res) => {
+  const { key } = req.query;
+  if (!key) return res.status(400).json({ error: 'Missing key query param' });
+  const s3 = getR2Client();
+  await s3.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+  res.json({ success: true, key });
+}));
+
+// GET /api/admin/r2/mods-json?key=DivLauncher/stalker/mods.json
+app.get('/api/admin/r2/mods-json', requireAdmin, asyncHandler(async (req, res) => {
+  const { key } = req.query;
+  if (!key) return res.status(400).json({ error: 'Missing key' });
+  const s3 = getR2Client();
+  try {
+    const cmd = new GetObjectCommand({ Bucket: R2_BUCKET, Key: key });
+    const data = await s3.send(cmd);
+    const buf = await streamToBuffer(data.Body);
+    res.setHeader('Content-Type', 'application/json');
+    res.send(buf);
+  } catch (err) {
+    if (err.name === 'NoSuchKey') {
+      res.json([]);
+    } else {
+      throw err;
+    }
+  }
+}));
+
+// PUT /api/admin/r2/mods-json?key=DivLauncher/stalker/mods.json
+app.put('/api/admin/r2/mods-json', requireAdmin, asyncHandler(async (req, res) => {
+  const { key } = req.query;
+  if (!key) return res.status(400).json({ error: 'Missing key' });
+  const content = typeof req.body === 'string' ? req.body : JSON.stringify(req.body, null, 2);
+  const s3 = getR2Client();
+  await s3.send(new PutObjectCommand({
+    Bucket: R2_BUCKET,
+    Key: key,
+    Body: content,
+    ContentType: 'application/json'
+  }));
+  res.json({ success: true, key, url: `${R2_PUBLIC_URL}/${key}` });
 }));
 
 // Global error handler middleware
