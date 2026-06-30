@@ -4,7 +4,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
 const { getDb } = require('./db');
-const { syncLuckPermsUser } = require('./luckperms');
+const { syncLuckPermsUser, syncLuckPermsGroup } = require('./luckperms');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -1138,6 +1138,107 @@ app.post('/api/admin/promote/:id', asyncHandler(async (req, res) => {
   } catch (err) {
     res.status(401).send();
   }
+}));
+
+// --- Custom Badge Management APIs ---
+
+app.get('/api/badges', asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const badges = await db.all('SELECT * FROM badges ORDER BY code ASC');
+  res.json(badges);
+}));
+
+app.post('/api/admin/badges', requireAdmin, asyncHandler(async (req, res) => {
+  const { code, text, gradient_start, gradient_end, border_color, lp_group, lp_prefix, lp_priority } = req.body;
+  if (!code || !text || !gradient_start || !gradient_end || !border_color) {
+    return res.status(400).json({ error: 'MissingRequiredFields', errorMessage: 'Missing required badge fields' });
+  }
+  const cleanCode = code.toUpperCase().trim();
+  const db = await getDb();
+  try {
+    const result = await db.run(
+      `INSERT INTO badges (code, text, gradient_start, gradient_end, border_color, lp_group, lp_prefix, lp_priority)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [cleanCode, text.trim(), gradient_start.trim(), gradient_end.trim(), border_color.trim(), lp_group ? lp_group.trim() : null, lp_prefix ? lp_prefix.trim() : null, lp_priority ? parseInt(lp_priority, 10) : 80]
+    );
+    
+    if (lp_group) {
+      await syncLuckPermsGroup(lp_group, lp_prefix, lp_priority);
+    }
+    
+    const newBadge = await db.get('SELECT * FROM badges WHERE id = ?', [result.lastID]);
+    res.status(201).json(newBadge);
+  } catch (err) {
+    if (err.message.includes('UNIQUE')) {
+      return res.status(400).json({ error: 'BadgeExists', errorMessage: 'A badge with this code already exists' });
+    }
+    throw err;
+  }
+}));
+
+app.put('/api/admin/badges/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const { code, text, gradient_start, gradient_end, border_color, lp_group, lp_prefix, lp_priority } = req.body;
+  if (!code || !text || !gradient_start || !gradient_end || !border_color) {
+    return res.status(400).json({ error: 'MissingRequiredFields', errorMessage: 'Missing required badge fields' });
+  }
+  const cleanCode = code.toUpperCase().trim();
+  const db = await getDb();
+  
+  const oldBadge = await db.get('SELECT code, lp_group FROM badges WHERE id = ?', [req.params.id]);
+  if (!oldBadge) {
+    return res.status(404).json({ error: 'BadgeNotFound', errorMessage: 'Badge not found' });
+  }
+  
+  try {
+    await db.run(
+      `UPDATE badges 
+       SET code = ?, text = ?, gradient_start = ?, gradient_end = ?, border_color = ?, lp_group = ?, lp_prefix = ?, lp_priority = ?
+       WHERE id = ?`,
+      [cleanCode, text.trim(), gradient_start.trim(), gradient_end.trim(), border_color.trim(), lp_group ? lp_group.trim() : null, lp_prefix ? lp_prefix.trim() : null, lp_priority ? parseInt(lp_priority, 10) : 80, req.params.id]
+    );
+    
+    // If the code changed, cascade the update to the users table
+    if (oldBadge.code !== cleanCode) {
+      await db.run('UPDATE users SET badge = ? WHERE UPPER(badge) = ?', [cleanCode, oldBadge.code]);
+    }
+    
+    // Sync to LuckPerms if LP group specified
+    if (lp_group) {
+      await syncLuckPermsGroup(lp_group, lp_prefix, lp_priority);
+    }
+    
+    const updatedBadge = await db.get('SELECT * FROM badges WHERE id = ?', [req.params.id]);
+    res.json(updatedBadge);
+  } catch (err) {
+    if (err.message.includes('UNIQUE')) {
+      return res.status(400).json({ error: 'BadgeExists', errorMessage: 'A badge with this code already exists' });
+    }
+    throw err;
+  }
+}));
+
+app.delete('/api/admin/badges/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const db = await getDb();
+  const badge = await db.get('SELECT code FROM badges WHERE id = ?', [req.params.id]);
+  if (!badge) {
+    return res.status(404).json({ error: 'BadgeNotFound', errorMessage: 'Badge not found' });
+  }
+  
+  // 1. Find all users with this badge
+  const usersToSync = await db.all('SELECT username, uuid FROM users WHERE UPPER(badge) = ?', [badge.code]);
+  
+  // 2. Clear badge for all users
+  await db.run('UPDATE users SET badge = NULL WHERE UPPER(badge) = ?', [badge.code]);
+  
+  // 3. Delete badge from database
+  await db.run('DELETE FROM badges WHERE id = ?', [req.params.id]);
+  
+  // 4. Sync updated users to LuckPerms so their groups are removed
+  for (const u of usersToSync) {
+    await syncLuckPermsUser(u.uuid, u.username, null);
+  }
+  
+  res.json({ message: 'Badge deleted successfully and users updated' });
 }));
 
 // --- In-Game Statistics & Badges Sync API (Server-Only) ---

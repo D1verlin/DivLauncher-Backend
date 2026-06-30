@@ -44,6 +44,58 @@ async function getDb() {
       )
     `);
 
+    await dbInstance.exec(`
+      CREATE TABLE IF NOT EXISTS badges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code TEXT UNIQUE NOT NULL,
+        text TEXT NOT NULL,
+        gradient_start TEXT NOT NULL,
+        gradient_end TEXT NOT NULL,
+        border_color TEXT NOT NULL,
+        lp_group TEXT DEFAULT NULL,
+        lp_prefix TEXT DEFAULT NULL,
+        lp_priority INTEGER DEFAULT 80
+      )
+    `);
+
+    try {
+      const badgeCount = await dbInstance.get('SELECT COUNT(*) as count FROM badges');
+      if (badgeCount && badgeCount.count === 0) {
+        console.log('Seeding default badges...');
+        const defaultBadges = [
+          { code: 'ADMIN', text: 'ADMIN', gradient_start: '#ef4444', gradient_end: '#b91c1c', border_color: 'rgba(239, 68, 68, 0.35)', lp_group: 'admin', lp_prefix: '&#d62828&l[&#e63946&lАдмин&#d62828&l]&r ', lp_priority: 100 },
+          { code: 'DEV', text: 'DEV', gradient_start: '#3b82f6', gradient_end: '#06b6d4', border_color: 'rgba(59, 130, 246, 0.35)', lp_group: 'developer', lp_prefix: '&#7209b7&l[&#b5179e&lРазработчик&#7209b7&l]&r ', lp_priority: 90 },
+          { code: 'VIP', text: 'VIP', gradient_start: '#f59e0b', gradient_end: '#d97706', border_color: 'rgba(245, 158, 11, 0.35)', lp_group: 'vip', lp_prefix: '&#0096c7&l[&#00f5d4&lVIP&#0096c7&l]&r ', lp_priority: 80 },
+          { code: 'PREMIUM', text: 'PREMIUM', gradient_start: '#10b981', gradient_end: '#0d9488', border_color: 'rgba(16, 185, 129, 0.35)', lp_group: null, lp_prefix: null, lp_priority: null },
+          { code: 'YOUTUBE', text: 'YOUTUBE', gradient_start: '#ff0000', gradient_end: '#ea580c', border_color: 'rgba(255, 0, 0, 0.35)', lp_group: null, lp_prefix: null, lp_priority: null },
+          { code: 'SPONSOR', text: 'SPONSOR', gradient_start: '#ec4899', gradient_end: '#8b5cf6', border_color: 'rgba(236, 72, 153, 0.35)', lp_group: 'sponsor', lp_prefix: '&#e85d04&l[&#faa307&lСпонсор&#e85d04&l]&r ', lp_priority: 70 },
+          { code: 'HELPER', text: 'HELPER', gradient_start: '#8b5cf6', gradient_end: '#4f46e5', border_color: 'rgba(139, 92, 246, 0.35)', lp_group: 'helper', lp_prefix: '&#0077b6&l[&#00bbf9&lПомощник&#0077b6&l]&r ', lp_priority: 60 }
+        ];
+        for (const badge of defaultBadges) {
+          await dbInstance.run(
+            `INSERT INTO badges (code, text, gradient_start, gradient_end, border_color, lp_group, lp_prefix, lp_priority) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [badge.code, badge.text, badge.gradient_start, badge.gradient_end, badge.border_color, badge.lp_group, badge.lp_prefix, badge.lp_priority]
+          );
+        }
+      }
+    } catch (seedErr) {
+      console.error('Failed to seed default badges:', seedErr.message);
+    }
+
+    try {
+      await dbInstance.run(`UPDATE users SET badge = 'ADMIN' WHERE UPPER(TRIM(badge)) IN ('ADMIN', 'АДМИН', 'OWNER', 'СОЗДАТЕЛЬ')`);
+      await dbInstance.run(`UPDATE users SET badge = 'DEV' WHERE UPPER(TRIM(badge)) IN ('DEV', 'DEVELOPER', 'РАЗРАБОТЧИК')`);
+      await dbInstance.run(`UPDATE users SET badge = 'VIP' WHERE UPPER(TRIM(badge)) IN ('VIP', 'ВИП', 'GOLD')`);
+      await dbInstance.run(`UPDATE users SET badge = 'PREMIUM' WHERE UPPER(TRIM(badge)) IN ('PREMIUM', 'PREM', 'ПРЕМИУМ')`);
+      await dbInstance.run(`UPDATE users SET badge = 'YOUTUBE' WHERE UPPER(TRIM(badge)) IN ('YOUTUBE', 'YT', 'MEDIA')`);
+      await dbInstance.run(`UPDATE users SET badge = 'SPONSOR' WHERE UPPER(TRIM(badge)) IN ('SPONSOR', 'СПОНСОР')`);
+      await dbInstance.run(`UPDATE users SET badge = 'HELPER' WHERE UPPER(TRIM(badge)) IN ('HELPER', 'ХЕЛПЕР', 'MOD', 'MODER', 'МОДЕРАТОР')`);
+    } catch (normErr) {
+      console.error('Failed to normalize legacy user badges:', normErr.message);
+    }
+
+
     const newColumns = [
       { name: 'google_id', type: 'TEXT DEFAULT NULL' },
       { name: 'google_email', type: 'TEXT DEFAULT NULL' },

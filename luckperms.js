@@ -1,3 +1,4 @@
+const { getDb } = require('./db');
 let mysql = null;
 try {
   mysql = require('mysql2/promise');
@@ -5,7 +6,7 @@ try {
   // mysql2 is not installed, which is fine if only using SQLite locally
 }
 
-// Badge to LuckPerms group mapping
+// Default fallback mappings (kept for legacy reasons or local test safety)
 const BADGE_MAP = {
   'ADMIN': 'admin',
   'DEV': 'developer',
@@ -118,7 +119,14 @@ async function syncLuckPermsUser(rawUuid, username, badge) {
     return;
   }
 
-  const groupName = badge ? BADGE_MAP[badge.toUpperCase()] : null;
+  // Get dynamic mapping from DB
+  let groupName = null;
+  const db = await getDb();
+  if (badge) {
+    const badgeInfo = await db.get('SELECT lp_group FROM badges WHERE UPPER(code) = ?', [badge.toUpperCase().trim()]);
+    groupName = badgeInfo ? badgeInfo.lp_group : null;
+  }
+
   console.log(`[LuckPerms Sync] Syncing user ${username} (${uuid}) with badge ${badge} -> LuckPerms group ${groupName}`);
 
   let conn;
@@ -128,7 +136,14 @@ async function syncLuckPermsUser(rawUuid, username, badge) {
     await conn.beginTransaction();
 
     // 1. Delete existing badge groups for this user
-    for (const group of ALL_GROUPS) {
+    // Fetch all group names dynamically from the badges table
+    const allBadges = await db.all('SELECT lp_group FROM badges WHERE lp_group IS NOT NULL');
+    const lpGroups = allBadges.map(b => b.lp_group.toLowerCase().trim());
+    
+    // Also include default/historical groups to clean up old configs
+    const ALL_GROUPS_TO_CLEAN = Array.from(new Set([...lpGroups, ...ALL_GROUPS]));
+
+    for (const group of ALL_GROUPS_TO_CLEAN) {
       const permission = `group.${group}`;
       await conn.query(
         'DELETE FROM luckperms_user_permissions WHERE uuid = ? AND permission = ?',
@@ -138,7 +153,7 @@ async function syncLuckPermsUser(rawUuid, username, badge) {
 
     // 2. Add the new badge group if set
     if (groupName) {
-      const permission = `group.${groupName}`;
+      const permission = `group.${groupName.toLowerCase().trim()}`;
       await conn.query(
         `INSERT INTO luckperms_user_permissions (uuid, permission, value, server, world, expiry, contexts)
          VALUES (?, ?, 1, 'global', 'global', 0, '{}')`,
@@ -147,7 +162,7 @@ async function syncLuckPermsUser(rawUuid, username, badge) {
     }
 
     // 3. Sync player primary group and username in luckperms_players
-    const primaryGroup = groupName || 'default';
+    const primaryGroup = groupName ? groupName.toLowerCase().trim() : 'default';
     await conn.query(
       `INSERT INTO luckperms_players (uuid, username, primary_group)
        VALUES (?, ?, ?)
@@ -171,8 +186,51 @@ async function syncLuckPermsUser(rawUuid, username, badge) {
   }
 }
 
+/**
+ * Syncs a badge group and its prefix/priority in LuckPerms MySQL database.
+ */
+async function syncLuckPermsGroup(lpGroup, lpPrefix, lpPriority = 80) {
+  const connectionPool = getPool();
+  if (!connectionPool) return;
+
+  if (!lpGroup) return;
+  const groupName = lpGroup.toLowerCase().trim();
+
+  let conn;
+  try {
+    conn = await connectionPool.getConnection();
+    await conn.beginTransaction();
+
+    // 1. Ensure group exists
+    await conn.query('INSERT IGNORE INTO luckperms_groups (name) VALUES (?)', [groupName]);
+
+    // 2. Sync prefix permission for the group
+    await conn.query('DELETE FROM luckperms_group_permissions WHERE name = ? AND permission LIKE "prefix.%"', [groupName]);
+
+    if (lpPrefix) {
+      const permission = `prefix.${lpPriority}.${lpPrefix}`;
+      await conn.query(
+        `INSERT INTO luckperms_group_permissions (name, permission, value, server, world, expiry, contexts)
+         VALUES (?, ?, 1, 'global', 'global', 0, '{}')`,
+        [groupName, permission]
+      );
+    }
+
+    await conn.commit();
+    console.log(`[LuckPerms Sync] Successfully synced LuckPerms group ${groupName} with prefix "${lpPrefix}" and priority ${lpPriority}`);
+  } catch (err) {
+    if (conn) {
+      try { await conn.rollback(); } catch (e) {}
+    }
+    console.error('[LuckPerms Sync] Failed to sync LuckPerms group/prefix:', err.message);
+  } finally {
+    if (conn) conn.release();
+  }
+}
+
 module.exports = {
   syncLuckPermsUser,
+  syncLuckPermsGroup,
   initializeLuckPermsDB: async () => {
     const connectionPool = getPool();
     if (!connectionPool) return;
