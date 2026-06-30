@@ -407,14 +407,28 @@ app.get('/api/profile', asyncHandler(async (req, res) => {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     const db = await getDb();
-    const user = await db.get(`
-      SELECT id, username, uuid, skin_url, cape_url, is_admin, badge, bio, google_email,
-             profile_bg_type, profile_bg_value, skin_model, avatar_type, avatar_url,
-             social_discord, social_telegram, social_youtube, social_github,
-             status_emoji, status_text
-      FROM users
-      WHERE id = ?
-    `, [decoded.id]);
+    
+    const { uuid } = req.query;
+    let user;
+    if (uuid) {
+      user = await db.get(`
+        SELECT id, username, uuid, skin_url, cape_url, is_admin, badge, bio, google_email,
+               profile_bg_type, profile_bg_value, skin_model, avatar_type, avatar_url,
+               social_discord, social_telegram, social_youtube, social_github,
+               status_emoji, status_text
+        FROM users
+        WHERE uuid = ?
+      `, [uuid]);
+    } else {
+      user = await db.get(`
+        SELECT id, username, uuid, skin_url, cape_url, is_admin, badge, bio, google_email,
+               profile_bg_type, profile_bg_value, skin_model, avatar_type, avatar_url,
+               social_discord, social_telegram, social_youtube, social_github,
+               status_emoji, status_text
+        FROM users
+        WHERE id = ?
+      `, [decoded.id]);
+    }
 
     if (!user) return res.status(404).send();
 
