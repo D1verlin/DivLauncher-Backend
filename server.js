@@ -143,8 +143,14 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 if (!fs.existsSync(skinsDir)) fs.mkdirSync(skinsDir);
 if (!fs.existsSync(capesDir)) fs.mkdirSync(capesDir);
 
-const JWT_SECRET = 'your-super-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-key';
+if (JWT_SECRET === 'your-super-secret-key') {
+  console.warn('\x1b[33m%s\x1b[0m', '[WARNING] JWT_SECRET is set to the default insecure value! Please configure JWT_SECRET in .env');
+}
 const SERVER_DOMAIN = 'http://localhost:3000'; // Change to actual domain in prod
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/api/auth/google/callback';
 
 // Helper: Format UUID with or without dashes
 const stripUUID = (uuid) => uuid.replace(/-/g, '');
@@ -355,10 +361,9 @@ app.post('/api/login', asyncHandler(async (req, res) => {
   const db = await getDb();
 
   const user = await db.get(`
-    SELECT u.*, s.playtime_seconds, s.blocks_mined, s.mobs_killed, s.deaths, s.achievements
-    FROM users u
-    LEFT JOIN user_stats s ON u.id = s.user_id
-    WHERE u.username = ?
+    SELECT *
+    FROM users
+    WHERE username = ?
   `, [username]);
 
   if (!user || !(await bcrypt.compare(password, user.password))) {
@@ -367,14 +372,6 @@ app.post('/api/login', asyncHandler(async (req, res) => {
 
   const token = jwt.sign({ id: user.id, username: user.username, uuid: user.uuid, is_admin: user.is_admin }, JWT_SECRET, { expiresIn: '7d' });
   
-  const stats = {
-    playtime_seconds: user.playtime_seconds || 0,
-    blocks_mined: user.blocks_mined || 0,
-    mobs_killed: user.mobs_killed || 0,
-    deaths: user.deaths || 0,
-    achievements_completed: user.achievements ? JSON.parse(user.achievements) : []
-  };
-
   res.json({
     token,
     user: {
@@ -386,7 +383,18 @@ app.post('/api/login', asyncHandler(async (req, res) => {
       is_admin: user.is_admin,
       badge: user.badge,
       bio: user.bio,
-      stats
+      google_email: user.google_email,
+      profile_bg_type: user.profile_bg_type || 'preset',
+      profile_bg_value: user.profile_bg_value || 'preset-1',
+      skin_model: user.skin_model || 'classic',
+      avatar_type: user.avatar_type || 'minecraft',
+      avatar_url: user.avatar_url,
+      social_discord: user.social_discord,
+      social_telegram: user.social_telegram,
+      social_youtube: user.social_youtube,
+      social_github: user.social_github,
+      status_emoji: user.status_emoji,
+      status_text: user.status_text
     }
   });
 }));
@@ -400,27 +408,15 @@ app.get('/api/profile', asyncHandler(async (req, res) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     const db = await getDb();
     const user = await db.get(`
-      SELECT u.id, u.username, u.uuid, u.skin_url, u.cape_url, u.is_admin, u.badge, u.bio,
-             s.playtime_seconds, s.blocks_mined, s.mobs_killed, s.deaths, s.achievements
-      FROM users u
-      LEFT JOIN user_stats s ON u.id = s.user_id
-      WHERE u.id = ?
+      SELECT id, username, uuid, skin_url, cape_url, is_admin, badge, bio, google_email,
+             profile_bg_type, profile_bg_value, skin_model, avatar_type, avatar_url,
+             social_discord, social_telegram, social_youtube, social_github,
+             status_emoji, status_text
+      FROM users
+      WHERE id = ?
     `, [decoded.id]);
 
-    if (user) {
-      user.stats = {
-        playtime_seconds: user.playtime_seconds || 0,
-        blocks_mined: user.blocks_mined || 0,
-        mobs_killed: user.mobs_killed || 0,
-        deaths: user.deaths || 0,
-        achievements_completed: user.achievements ? JSON.parse(user.achievements) : []
-      };
-      delete user.playtime_seconds;
-      delete user.blocks_mined;
-      delete user.mobs_killed;
-      delete user.deaths;
-      delete user.achievements;
-    }
+    if (!user) return res.status(404).send();
 
     res.json(user);
   } catch (err) {
@@ -473,41 +469,333 @@ app.post('/api/profile/bio', asyncHandler(async (req, res) => {
   }
 }));
 
-app.post('/api/profile/sync-stats', asyncHandler(async (req, res) => {
+// --- GOOGLE OAUTH ENDPOINTS ---
+
+app.get('/api/auth/google', (req, res) => {
+  const { port, action, token } = req.query;
+  if (!port) return res.status(400).send('Missing local port');
+  
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+    return res.status(500).send('Google Authentication is not configured on the server.');
+  }
+
+  // Create state variable containing action, port, and token if linking
+  const stateObj = { port, action: action || 'login', token: token || null };
+  const state = Buffer.from(JSON.stringify(stateObj)).toString('base64');
+
+  const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` + 
+    `client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}` + 
+    `&redirect_uri=${encodeURIComponent(GOOGLE_REDIRECT_URI)}` + 
+    `&response_type=code` + 
+    `&scope=openid%20profile%20email` + 
+    `&state=${state}` + 
+    `&prompt=select_account`;
+
+  res.redirect(googleAuthUrl);
+});
+
+app.get('/api/auth/google/callback', asyncHandler(async (req, res) => {
+  const { code, state, error } = req.query;
+  const crypto = require('crypto');
+  
+  // Extract port from state to redirect errors to loopback server
+  let port = 3000;
+  let action = 'login';
+  let token = null;
+  
+  if (state) {
+    try {
+      const stateObj = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
+      port = stateObj.port;
+      action = stateObj.action || 'login';
+      token = stateObj.token;
+    } catch (e) {
+      console.error('Failed to parse state:', e);
+    }
+  }
+
+  if (error) {
+    return res.redirect(`http://localhost:${port}/auth-callback?status=error&error=${encodeURIComponent(error)}`);
+  }
+  if (!code) {
+    return res.redirect(`http://localhost:${port}/auth-callback?status=error&error=Missing%20authorization%20code`);
+  }
+
+  try {
+    // 1. Exchange authorization code for tokens
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: GOOGLE_REDIRECT_URI,
+        grant_type: 'authorization_code'
+      })
+    });
+
+    if (!tokenResponse.ok) {
+      const errText = await tokenResponse.text();
+      throw new Error(`Failed to exchange code: ${errText}`);
+    }
+
+    const tokenData = await tokenResponse.json();
+    const googleAccessToken = tokenData.access_token;
+
+    // 2. Fetch Google profile
+    const profileResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${googleAccessToken}` }
+    });
+
+    if (!profileResponse.ok) {
+      throw new Error('Failed to fetch user profile from Google');
+    }
+
+    const googleUser = await profileResponse.json();
+    const googleId = googleUser.sub;
+    const googleEmail = googleUser.email;
+    const googleName = googleUser.name;
+
+    const db = await getDb();
+
+    if (action === 'link') {
+      // LINKING GOOGLE TO EXISTING USER
+      if (!token) {
+        return res.redirect(`http://localhost:${port}/auth-callback?status=error&error=Missing%20auth%20token`);
+      }
+      let decoded;
+      try {
+        decoded = jwt.verify(token, JWT_SECRET);
+      } catch (jwtErr) {
+        return res.redirect(`http://localhost:${port}/auth-callback?status=error&error=Invalid%20or%20expired%20session`);
+      }
+
+      // Check if this Google ID is already linked
+      const existingLink = await db.get('SELECT id, username FROM users WHERE google_id = ?', [googleId]);
+      if (existingLink && existingLink.id !== decoded.id) {
+        return res.redirect(`http://localhost:${port}/auth-callback?status=error&error=This%20Google%20account%20is%20already%20linked%20to%20player%20${existingLink.username}`);
+      }
+
+      await db.run('UPDATE users SET google_id = ?, google_email = ? WHERE id = ?', [googleId, googleEmail, decoded.id]);
+      return res.redirect(`http://localhost:${port}/auth-callback?status=success&action=link&email=${encodeURIComponent(googleEmail)}`);
+    } else {
+      // LOGIN / REGISTRATION WITH GOOGLE
+      let user = await db.get('SELECT * FROM users WHERE google_id = ?', [googleId]);
+
+      if (!user) {
+        // Check if a user with this email already exists
+        user = await db.get('SELECT * FROM users WHERE google_email = ?', [googleEmail]);
+        if (user) {
+          // Auto-link Google ID to existing user
+          await db.run('UPDATE users SET google_id = ? WHERE id = ?', [googleId, user.id]);
+        } else {
+          // Register a new user
+          // Base username on google email or name, strip special characters
+          let username = (googleName || googleEmail.split('@')[0]).replace(/[^a-zA-Z0-9_]/g, '');
+          if (username.length < 3) username = `GoogleUser_${crypto.randomBytes(3).toString('hex')}`;
+          
+          // Ensure username uniqueness
+          let usernameCheck = await db.get('SELECT id FROM users WHERE username = ?', [username]);
+          while (usernameCheck) {
+            username = `${username}_${crypto.randomBytes(2).toString('hex')}`;
+            usernameCheck = await db.get('SELECT id FROM users WHERE username = ?', [username]);
+          }
+
+          const userUuid = crypto.randomUUID().replace(/-/g, '');
+          const randomPassword = crypto.randomBytes(16).toString('hex');
+          const hashedPassword = await bcrypt.hash(randomPassword, 10);
+
+          const result = await db.run(
+            `INSERT INTO users (username, uuid, password, google_id, google_email) VALUES (?, ?, ?, ?, ?)`,
+            [username, userUuid, hashedPassword, googleId, googleEmail]
+          );
+
+          user = await db.get('SELECT * FROM users WHERE id = ?', [result.lastID]);
+        }
+      }
+
+      // Generate credentials
+      const token = jwt.sign({ id: user.id, username: user.username, uuid: user.uuid, is_admin: user.is_admin }, JWT_SECRET, { expiresIn: '7d' });
+      const clientToken = crypto.randomUUID().replace(/-/g, '');
+      const yggdrasilAccessToken = crypto.randomUUID().replace(/-/g, '');
+      
+      await db.run('UPDATE users SET access_token = ?, client_token = ? WHERE id = ?', [yggdrasilAccessToken, clientToken, user.id]);
+
+      return res.redirect(`http://localhost:${port}/auth-callback?status=success` + 
+        `&action=login` +
+        `&token=${token}` +
+        `&accessToken=${yggdrasilAccessToken}` +
+        `&clientToken=${clientToken}` +
+        `&username=${encodeURIComponent(user.username)}` +
+        `&uuid=${user.uuid}` +
+        `&id=${user.id}` +
+        `&is_admin=${user.is_admin}` +
+        `&badge=${user.badge || ''}`);
+    }
+  } catch (err) {
+    console.error('Google OAuth callback error:', err);
+    return res.redirect(`http://localhost:${port}/auth-callback?status=error&error=${encodeURIComponent(err.message)}`);
+  }
+}));
+
+app.post('/api/profile/google/unlink', asyncHandler(async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).send();
   const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    const { playtime_seconds = 0, blocks_mined = 0, mobs_killed = 0, deaths = 0, achievements = [] } = req.body;
     const db = await getDb();
-    
-    // Insert or update stats inside user_stats
-    await db.run(`
-      INSERT INTO user_stats (user_id, playtime_seconds, blocks_mined, mobs_killed, deaths, achievements, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(user_id) DO UPDATE SET
-        playtime_seconds = excluded.playtime_seconds,
-        blocks_mined = excluded.blocks_mined,
-        mobs_killed = excluded.mobs_killed,
-        deaths = excluded.deaths,
-        achievements = excluded.achievements,
-        updated_at = CURRENT_TIMESTAMP
-    `, [decoded.id, playtime_seconds, blocks_mined, mobs_killed, deaths, JSON.stringify(achievements)]);
+    await db.run('UPDATE users SET google_id = NULL, google_email = NULL WHERE id = ?', [decoded.id]);
+    res.json({ message: 'Google account unlinked successfully' });
+  } catch (err) {
+    res.status(401).send();
+  }
+}));
 
-    // Automatically award "Ветеран" badge if playtime >= 50 hours (180000 seconds)
-    if (playtime_seconds >= 50 * 3600) {
-      const user = await db.get("SELECT badge, uuid, username FROM users WHERE id = ?", [decoded.id]);
-      if (user && user.badge !== 'Ветеран') {
-        await db.run('UPDATE users SET badge = ? WHERE id = ?', ['Ветеран', decoded.id]);
-        console.log(`[Badge Auto-Award] Awarded "Ветеран" badge to ${user.username} (Playtime: ${playtime_seconds}s)`);
-        await syncLuckPermsUser(user.uuid, user.username, 'Ветеран');
+// --- PROFILE CUSTOMIZATION ENDPOINTS ---
+
+app.post('/api/profile/customize', asyncHandler(async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).send();
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const updates = req.body;
+    const db = await getDb();
+
+    const allowedFields = [
+      'profile_bg_type', 'profile_bg_value', 'skin_model', 'avatar_type',
+      'social_discord', 'social_telegram', 'social_youtube', 'social_github',
+      'status_emoji', 'status_text', 'bio'
+    ];
+
+    const fieldsToSet = [];
+    const params = [];
+
+    for (const field of allowedFields) {
+      if (updates[field] !== undefined) {
+        fieldsToSet.push(`${field} = ?`);
+        params.push(updates[field] === '' ? null : updates[field]);
       }
     }
 
-    res.json({ message: 'Stats synced successfully' });
+    if (fieldsToSet.length > 0) {
+      params.push(decoded.id);
+      await db.run(`UPDATE users SET ${fieldsToSet.join(', ')} WHERE id = ?`, params);
+    }
+
+    const updatedUser = await db.get(`
+      SELECT profile_bg_type, profile_bg_value, skin_model, avatar_type, avatar_url,
+             social_discord, social_telegram, social_youtube, social_github,
+             status_emoji, status_text, bio, google_email
+      FROM users WHERE id = ?
+    `, [decoded.id]);
+
+    res.json({ message: 'Profile updated successfully', user: updatedUser });
   } catch (err) {
-    console.error('Stats sync error:', err.message);
+    res.status(401).send();
+  }
+}));
+
+app.post('/api/profile/background', (req, res, next) => {
+  uploadMemory.single('background')(req, res, (err) => {
+    if (err) return next(err);
+    next();
+  });
+}, asyncHandler(async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).send();
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (!req.file) {
+      return res.status(400).json({ error: 'NoFile', errorMessage: 'Не передан файл фона' });
+    }
+
+    if (req.file.size > 5 * 1024 * 1024) {
+      return res.status(400).json({ error: 'TooLarge', errorMessage: 'Файл слишком большой (макс. 5 МБ)' });
+    }
+
+    const allowedMime = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif'];
+    if (!allowedMime.includes(req.file.mimetype)) {
+      return res.status(400).json({ error: 'InvalidType', errorMessage: 'Разрешены только файлы PNG, JPG, JPEG или GIF' });
+    }
+
+    const ext = req.file.mimetype.split('/')[1] === 'jpeg' ? 'jpg' : req.file.mimetype.split('/')[1];
+    const targetDir = path.join(__dirname, 'uploads', 'backgrounds');
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+
+    const files = fs.readdirSync(targetDir);
+    for (const file of files) {
+      if (file.startsWith(`${decoded.id}.`)) {
+        try { fs.unlinkSync(path.join(targetDir, file)); } catch (e) {}
+      }
+    }
+
+    const fileName = `${decoded.id}.${ext}`;
+    const targetPath = path.join(targetDir, fileName);
+    fs.writeFileSync(targetPath, req.file.buffer);
+
+    const bgUrl = `/uploads/backgrounds/${fileName}?v=${Date.now()}`;
+    const db = await getDb();
+    await db.run('UPDATE users SET profile_bg_type = ?, profile_bg_value = ? WHERE id = ?', ['custom', bgUrl, decoded.id]);
+
+    res.json({ message: 'Background uploaded successfully', profile_bg_value: bgUrl });
+  } catch (err) {
+    res.status(401).send();
+  }
+}));
+
+app.post('/api/profile/avatar', (req, res, next) => {
+  uploadMemory.single('avatar')(req, res, (err) => {
+    if (err) return next(err);
+    next();
+  });
+}, asyncHandler(async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).send();
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (!req.file) {
+      return res.status(400).json({ error: 'NoFile', errorMessage: 'Не передан файл аватарки' });
+    }
+
+    if (req.file.size > 2 * 1024 * 1024) {
+      return res.status(400).json({ error: 'TooLarge', errorMessage: 'Файл слишком большой (макс. 2 МБ)' });
+    }
+
+    const allowedMime = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif'];
+    if (!allowedMime.includes(req.file.mimetype)) {
+      return res.status(400).json({ error: 'InvalidType', errorMessage: 'Разрешены только файлы PNG, JPG, JPEG или GIF' });
+    }
+
+    const ext = req.file.mimetype.split('/')[1] === 'jpeg' ? 'jpg' : req.file.mimetype.split('/')[1];
+    const targetDir = path.join(__dirname, 'uploads', 'avatars');
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+
+    const files = fs.readdirSync(targetDir);
+    for (const file of files) {
+      if (file.startsWith(`${decoded.id}.`)) {
+        try { fs.unlinkSync(path.join(targetDir, file)); } catch (e) {}
+      }
+    }
+
+    const fileName = `${decoded.id}.${ext}`;
+    const targetPath = path.join(targetDir, fileName);
+    fs.writeFileSync(targetPath, req.file.buffer);
+
+    const avatarUrl = `/uploads/avatars/${fileName}?v=${Date.now()}`;
+    const db = await getDb();
+    await db.run('UPDATE users SET avatar_type = ?, avatar_url = ? WHERE id = ?', ['custom', avatarUrl, decoded.id]);
+
+    res.json({ message: 'Avatar uploaded successfully', avatar_url: avatarUrl });
+  } catch (err) {
     res.status(401).send();
   }
 }));
@@ -520,33 +808,60 @@ app.get('/api/users', asyncHandler(async (req, res) => {
     jwt.verify(token, JWT_SECRET);
     const db = await getDb();
     const users = await db.all(`
-      SELECT u.username, u.uuid, u.skin_url, u.cape_url, u.is_admin, u.badge, u.bio,
-             s.playtime_seconds, s.blocks_mined, s.mobs_killed, s.deaths, s.achievements
-      FROM users u
-      LEFT JOIN user_stats s ON u.id = s.user_id
+      SELECT id, username, uuid, skin_url, cape_url, is_admin, badge, bio,
+             profile_bg_type, profile_bg_value, skin_model, avatar_type, avatar_url,
+             social_discord, social_telegram, social_youtube, social_github,
+             status_emoji, status_text
+      FROM users
     `);
 
-    const formattedUsers = users.map(user => {
-      user.stats = {
-        playtime_seconds: user.playtime_seconds || 0,
-        blocks_mined: user.blocks_mined || 0,
-        mobs_killed: user.mobs_killed || 0,
-        deaths: user.deaths || 0,
-        achievements_completed: user.achievements ? JSON.parse(user.achievements) : []
-      };
-      delete user.playtime_seconds;
-      delete user.blocks_mined;
-      delete user.mobs_killed;
-      delete user.deaths;
-      delete user.achievements;
-      return user;
-    });
-
-    res.json(formattedUsers);
+    res.json(users);
   } catch (err) {
     res.status(401).send();
   }
 }));
+
+function validateMinecraftPng(buffer, isCape = false) {
+  if (!buffer || buffer.length < 24) {
+    return { valid: false, error: 'Файл поврежден или слишком мал' };
+  }
+  // Check PNG signature: 89 50 4E 47 0D 0A 1A 0A
+  const isPng = buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47 &&
+                buffer[4] === 0x0D && buffer[5] === 0x0A && buffer[6] === 0x1A && buffer[7] === 0x0A;
+  if (!isPng) {
+    return { valid: false, error: 'Файл не является корректным PNG-изображением' };
+  }
+  // Check IHDR chunk type
+  const chunkType = buffer.toString('ascii', 12, 16);
+  if (chunkType !== 'IHDR') {
+    return { valid: false, error: 'Неверный формат PNG (отсутствует IHDR)' };
+  }
+  const width = buffer.readInt32BE(16);
+  const height = buffer.readInt32BE(20);
+
+  if (width <= 0 || height <= 0) {
+    return { valid: false, error: 'Некорректные размеры изображения' };
+  }
+
+  if (isCape) {
+    // Cape dimensions validation (normally 64x32 or ratios of it like 2:1)
+    if (width % 64 !== 0 || height % 32 !== 0 || (width / height !== 2)) {
+      return { valid: false, error: `Неверные размеры плаща (${width}x${height}). Отношение сторон должно быть 2:1 (например, 64x32)` };
+    }
+  } else {
+    // Skin dimensions validation
+    // Standard skin is 64x64 (ratio 1:1) or 64x32 (ratio 2:1)
+    const ratio = width / height;
+    if (ratio !== 1 && ratio !== 2) {
+      return { valid: false, error: `Неверные пропорции скина (${width}x${height}). Соотношение сторон должно быть 1:1 или 2:1 (например, 64x64 или 64x32)` };
+    }
+    if (width % 64 !== 0) {
+      return { valid: false, error: `Некорректное разрешение скина (${width}x${height}). Разрешение должно быть кратно 64 (например, 64x64, 128x128 и т.д.)` };
+    }
+  }
+
+  return { valid: true, width, height };
+}
 
 app.post('/api/profile/skin', (req, res, next) => {
   console.log('[BACKEND] /api/profile/skin: Multer parsing starting...');
@@ -572,6 +887,31 @@ app.post('/api/profile/skin', (req, res, next) => {
     if (!req.file) {
       if (!res.destroyed && !res.headersSent) {
         res.status(400).json({ error: 'NoFile', errorMessage: 'Не передан файл скина' });
+      }
+      return;
+    }
+
+    // 1. File size check (max 500 KB)
+    if (req.file.size > 500 * 1024) {
+      if (!res.destroyed && !res.headersSent) {
+        res.status(400).json({ error: 'TooLarge', errorMessage: 'Скин слишком большого размера (лимит 500 КБ)' });
+      }
+      return;
+    }
+
+    // 2. MIME type check
+    if (req.file.mimetype !== 'image/png') {
+      if (!res.destroyed && !res.headersSent) {
+        res.status(400).json({ error: 'InvalidType', errorMessage: 'Разрешены только файлы PNG' });
+      }
+      return;
+    }
+
+    // 3. Size/Ratio validation
+    const valResult = validateMinecraftPng(req.file.buffer, false);
+    if (!valResult.valid) {
+      if (!res.destroyed && !res.headersSent) {
+        res.status(400).json({ error: 'InvalidDimensions', errorMessage: valResult.error });
       }
       return;
     }
@@ -625,6 +965,31 @@ app.post('/api/profile/cape', (req, res, next) => {
     if (!req.file) {
       if (!res.destroyed && !res.headersSent) {
         res.status(400).json({ error: 'NoFile', errorMessage: 'Не передан файл плаща' });
+      }
+      return;
+    }
+
+    // 1. File size check (max 100 KB)
+    if (req.file.size > 100 * 1024) {
+      if (!res.destroyed && !res.headersSent) {
+        res.status(400).json({ error: 'TooLarge', errorMessage: 'Плащ слишком большого размера (лимит 100 КБ)' });
+      }
+      return;
+    }
+
+    // 2. MIME type check
+    if (req.file.mimetype !== 'image/png') {
+      if (!res.destroyed && !res.headersSent) {
+        res.status(400).json({ error: 'InvalidType', errorMessage: 'Разрешены только файлы PNG' });
+      }
+      return;
+    }
+
+    // 3. Size/Ratio validation
+    const valResult = validateMinecraftPng(req.file.buffer, true);
+    if (!valResult.valid) {
+      if (!res.destroyed && !res.headersSent) {
+        res.status(400).json({ error: 'InvalidDimensions', errorMessage: valResult.error });
       }
       return;
     }
@@ -780,49 +1145,7 @@ const verifyServerToken = (req, res, next) => {
   next();
 };
 
-app.post('/api/server/sync-stats', verifyServerToken, asyncHandler(async (req, res) => {
-  const { uuid, username, stats } = req.body;
-  if (!uuid) {
-    return res.status(400).json({ error: 'BadRequest', errorMessage: 'Missing player UUID' });
-  }
 
-  const db = await getDb();
-  
-  // Find user by uuid (ignoring dashes) or username as fallback
-  let user = await db.get(
-    "SELECT id, username, uuid FROM users WHERE REPLACE(uuid, '-', '') = REPLACE(?, '-', '') OR username = ?", 
-    [uuid, uuid, username]
-  );
-  
-  if (!user) {
-    console.log(`[Stats Sync] User with UUID ${uuid} or username ${username} not found in launcher database.`);
-    return res.status(404).json({ error: 'UserNotFound', errorMessage: 'User not registered in launcher' });
-  }
-
-  const playerStats = stats || {};
-  await db.run(
-    `INSERT INTO user_stats (user_id, playtime_seconds, blocks_mined, mobs_killed, deaths, achievements, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-     ON CONFLICT(user_id) DO UPDATE SET
-       playtime_seconds = excluded.playtime_seconds,
-       blocks_mined = excluded.blocks_mined,
-       mobs_killed = excluded.mobs_killed,
-       deaths = excluded.deaths,
-       achievements = excluded.achievements,
-       updated_at = CURRENT_TIMESTAMP`,
-    [
-      user.id,
-      playerStats.playtime_seconds || 0,
-      playerStats.blocks_mined || 0,
-      playerStats.mobs_killed || 0,
-      playerStats.deaths || 0,
-      JSON.stringify(playerStats.achievements_completed || [])
-    ]
-  );
-
-  console.log(`[Stats Sync] Synced stats for ${user.username} (${uuid}) successfully.`);
-  res.json({ message: 'Stats synced successfully' });
-}));
 
 app.post('/api/server/award-badge', verifyServerToken, asyncHandler(async (req, res) => {
   const { uuid, badge } = req.body;
