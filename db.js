@@ -45,7 +45,7 @@ async function getDb() {
     `);
 
     const newColumns = [
-      { name: 'google_id', type: 'TEXT UNIQUE DEFAULT NULL' },
+      { name: 'google_id', type: 'TEXT DEFAULT NULL' },
       { name: 'google_email', type: 'TEXT DEFAULT NULL' },
       { name: 'profile_bg_type', type: 'TEXT DEFAULT \'preset\'' },
       { name: 'profile_bg_value', type: 'TEXT DEFAULT \'preset-1\'' },
@@ -84,6 +84,12 @@ async function getDb() {
       } catch (e) {
         // Column might already exist, ignore
       }
+    }
+
+    try {
+      await dbInstance.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id)`);
+    } catch (e) {
+      // Index might already exist, ignore
     }
 
     try {
