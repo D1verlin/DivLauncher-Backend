@@ -3,7 +3,7 @@
   "info": {
     "title": "DivLauncher Auth & Yggdrasil API",
     "version": "1.0.0",
-    "description": "API documentation for the DivLauncher custom authentication and session server (including Yggdrasil API эмуляция для authlib-injector)."
+    "description": "API documentation for the DivLauncher custom authentication and session server (including Yggdrasil API эмуляция для authlib-injector).\n\n[Privacy Policy (Политика конфиденциальности)](/privacy) | [Terms of Service (Условия использования)](/terms)"
   },
   "servers": [
     {

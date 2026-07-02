@@ -128,7 +128,418 @@ app.get('/docs', (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.redirect('/docs');
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>DivLauncher Auth Server</title>
+      <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+      <style>
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&display=swap');
+
+        :root {
+          --bg-color: #09090e;
+          --card-bg: rgba(10, 10, 16, 0.6);
+          --border-color: rgba(255, 255, 255, 0.08);
+          --text-main: #ffffff;
+          --text-secondary: #a1a1aa;
+          
+          --accent-emerald: #10b981;
+          --accent-emerald-hover: #34d399;
+          --accent-purple: #a78bfa;
+          --accent-purple-hover: #c084fc;
+          --accent-blue: #3b82f6;
+          --accent-blue-hover: #60a5fa;
+        }
+
+        * {
+          box-sizing: border-box;
+          margin: 0;
+          padding: 0;
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        body {
+          background: radial-gradient(circle at 50% 50%, #151226 0%, var(--bg-color) 70%);
+          color: var(--text-main);
+          font-family: 'Montserrat', sans-serif;
+          min-height: 100vh;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          overflow-x: hidden;
+        }
+
+        .ambient-glow {
+          position: absolute;
+          width: 400px;
+          height: 400px;
+          background: radial-gradient(circle, rgba(124, 58, 237, 0.12) 0%, rgba(0, 0, 0, 0) 70%);
+          top: -100px;
+          left: -100px;
+          z-index: 0;
+          pointer-events: none;
+        }
+
+        .ambient-glow-2 {
+          position: absolute;
+          width: 500px;
+          height: 500px;
+          background: radial-gradient(circle, rgba(16, 185, 129, 0.08) 0%, rgba(0, 0, 0, 0) 70%);
+          bottom: -150px;
+          right: -150px;
+          z-index: 0;
+          pointer-events: none;
+        }
+
+        header {
+          padding: 30px 40px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          z-index: 10;
+        }
+
+        .logo {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          font-weight: 900;
+          font-size: 24px;
+          letter-spacing: 1px;
+          text-transform: uppercase;
+          background: linear-gradient(135deg, var(--text-main) 30%, var(--accent-emerald) 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+        }
+
+        .logo i {
+          background: linear-gradient(135deg, var(--accent-emerald) 0%, var(--accent-purple) 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          font-size: 28px;
+        }
+
+        .lang-selector {
+          display: flex;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid var(--border-color);
+          border-radius: 30px;
+          padding: 4px;
+        }
+
+        .lang-btn {
+          background: none;
+          border: none;
+          color: var(--text-secondary);
+          font-family: 'Montserrat', sans-serif;
+          font-weight: 700;
+          font-size: 12px;
+          padding: 8px 16px;
+          border-radius: 20px;
+          cursor: pointer;
+          text-transform: uppercase;
+        }
+
+        .lang-btn.active {
+          background: var(--accent-emerald);
+          color: var(--bg-color);
+        }
+
+        main {
+          flex: 1;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          padding: 40px 20px;
+          z-index: 10;
+        }
+
+        .card {
+          max-width: 650px;
+          width: 100%;
+          background: var(--card-bg);
+          backdrop-filter: blur(24px);
+          -webkit-backdrop-filter: blur(24px);
+          border: 1px solid var(--border-color);
+          border-radius: 24px;
+          padding: 45px;
+          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+          text-align: center;
+          position: relative;
+        }
+
+        .status-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          background: rgba(16, 185, 129, 0.1);
+          border: 1px solid rgba(16, 185, 129, 0.2);
+          color: var(--accent-emerald-hover);
+          padding: 6px 14px;
+          border-radius: 30px;
+          font-size: 11px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+          margin-bottom: 24px;
+        }
+
+        .status-dot {
+          width: 8px;
+          height: 8px;
+          background-color: var(--accent-emerald);
+          border-radius: 50%;
+          animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+          0% {
+            transform: scale(0.95);
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+          }
+          70% {
+            transform: scale(1);
+            box-shadow: 0 0 0 8px rgba(16, 185, 129, 0);
+          }
+          100% {
+            transform: scale(0.95);
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+          }
+        }
+
+        h1 {
+          font-size: 32px;
+          font-weight: 900;
+          margin-bottom: 16px;
+          letter-spacing: -0.5px;
+          line-height: 1.2;
+        }
+
+        p.description {
+          color: var(--text-secondary);
+          font-size: 15px;
+          line-height: 1.6;
+          margin-bottom: 35px;
+        }
+
+        .actions-grid {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 16px;
+          margin-bottom: 30px;
+        }
+
+        @media (min-width: 480px) {
+          .actions-grid {
+            grid-template-columns: 1fr 1fr;
+          }
+        }
+
+        .btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          text-decoration: none;
+          font-weight: 800;
+          font-size: 14px;
+          padding: 14px 20px;
+          border-radius: 12px;
+          cursor: pointer;
+        }
+
+        .btn:hover {
+          transform: translateY(-2px);
+        }
+
+        .btn:active {
+          transform: translateY(1px);
+        }
+
+        .btn-primary {
+          background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.08));
+          border: 1px solid rgba(16, 185, 129, 0.35);
+          color: var(--accent-emerald-hover);
+          box-shadow: 0 4px 15px rgba(16, 185, 129, 0.05);
+        }
+
+        .btn-primary:hover {
+          background: linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(5, 150, 105, 0.15));
+          border-color: var(--accent-emerald);
+          box-shadow: 0 6px 20px rgba(16, 185, 129, 0.15);
+        }
+
+        .btn-secondary {
+          background: linear-gradient(135deg, rgba(167, 139, 250, 0.15), rgba(124, 58, 237, 0.08));
+          border: 1px solid rgba(167, 139, 250, 0.35);
+          color: var(--accent-purple-hover);
+          box-shadow: 0 4px 15px rgba(167, 139, 250, 0.05);
+        }
+
+        .btn-secondary:hover {
+          background: linear-gradient(135deg, rgba(167, 139, 250, 0.25), rgba(124, 58, 237, 0.15));
+          border-color: var(--accent-purple);
+          box-shadow: 0 6px 20px rgba(167, 139, 250, 0.15);
+        }
+
+        .btn-tertiary {
+          background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(37, 99, 235, 0.08));
+          border: 1px solid rgba(59, 130, 246, 0.35);
+          color: var(--accent-blue-hover);
+          box-shadow: 0 4px 15px rgba(59, 130, 246, 0.05);
+        }
+
+        .btn-tertiary:hover {
+          background: linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(37, 99, 235, 0.15));
+          border-color: var(--accent-blue);
+          box-shadow: 0 6px 20px rgba(59, 130, 246, 0.15);
+        }
+
+        .legal-links {
+          display: flex;
+          justify-content: center;
+          gap: 20px;
+          font-size: 12px;
+          font-weight: 600;
+        }
+
+        .legal-links a {
+          color: var(--text-secondary);
+          text-decoration: none;
+        }
+
+        .legal-links a:hover {
+          color: var(--accent-emerald-hover);
+          text-decoration: underline;
+        }
+
+        footer {
+          padding: 30px 20px;
+          text-align: center;
+          color: rgba(255, 255, 255, 0.3);
+          font-size: 11px;
+          font-weight: 600;
+          letter-spacing: 0.5px;
+          z-index: 10;
+        }
+
+        footer a {
+          color: rgba(255, 255, 255, 0.4);
+          text-decoration: none;
+        }
+
+        footer a:hover {
+          color: var(--accent-emerald-hover);
+        }
+
+        [lang-content] {
+          display: none;
+        }
+
+        body.lang-en [lang-content="en"] {
+          display: block;
+        }
+
+        body.lang-ru [lang-content="ru"] {
+          display: block;
+        }
+      </style>
+    </head>
+    <body class="lang-en">
+      <div class="ambient-glow"></div>
+      <div class="ambient-glow-2"></div>
+
+      <header>
+        <div class="logo">
+          <i class="fa-solid fa-shield-halved"></i>
+          <span>DivLauncher</span>
+        </div>
+        <div class="lang-selector">
+          <button class="lang-btn active" onclick="setLanguage('en')">EN</button>
+          <button class="lang-btn" onclick="setLanguage('ru')">RU</button>
+        </div>
+      </header>
+
+      <main>
+        <div class="card">
+          <div class="status-badge">
+            <span class="status-dot"></span>
+            <span lang-content="en">Auth Service Active</span>
+            <span lang-content="ru">Сервис авторизации активен</span>
+          </div>
+
+          <h1 lang-content="en">Secure Verification Server</h1>
+          <h1 lang-content="ru">Сервер безопасной авторизации</h1>
+
+          <p class="description" lang-content="en">
+            This is the central authentication server for the DivLauncher client ecosystem. We utilize secure Google OAuth2 integration to verify player identities, prevent unauthorized duplicate accounts, and protect user profile customizations.
+          </p>
+          <p class="description" lang-content="ru">
+            Это центральный сервер авторизации для экосистемы клиентов DivLauncher. Мы используем безопасную интеграцию Google OAuth2 для верификации игроков, защиты от несанкционированных дублирующих аккаунтов и сохранения кастомизации профилей пользователей.
+          </p>
+
+          <div class="actions-grid">
+            <a href="/docs" class="btn btn-primary">
+              <i class="fa-solid fa-code"></i>
+              <span lang-content="en">API Documentation</span>
+              <span lang-content="ru">Документация API</span>
+            </a>
+            <a href="/privacy" class="btn btn-secondary">
+              <i class="fa-solid fa-user-shield"></i>
+              <span lang-content="en">Privacy Policy</span>
+              <span lang-content="ru">Политика приватности</span>
+            </a>
+          </div>
+
+          <div class="legal-links">
+            <a href="/privacy">
+              <span lang-content="en">Privacy Policy</span>
+              <span lang-content="ru">Политика конфиденциальности</span>
+            </a>
+            <a href="/terms">
+              <span lang-content="en">Terms of Service</span>
+              <span lang-content="ru">Условия использования</span>
+            </a>
+          </div>
+        </div>
+      </main>
+
+      <footer>
+        <p>&copy; 2026 DivLauncher. All rights reserved. | <a href="mailto:support@diverlin.ru">support@diverlin.ru</a></p>
+      </footer>
+
+      <script>
+        function setLanguage(lang) {
+          document.body.className = 'lang-' + lang;
+          document.querySelectorAll('.lang-btn').forEach(btn => {
+            if (btn.innerText.toLowerCase() === lang) {
+              btn.classList.add('active');
+            } else {
+              btn.classList.remove('active');
+            }
+          });
+          localStorage.setItem('divlauncher-lang', lang);
+        }
+
+        const storedLang = localStorage.getItem('divlauncher-lang');
+        if (storedLang === 'en' || storedLang === 'ru') {
+          setLanguage(storedLang);
+        } else {
+          const userLang = navigator.language || navigator.userLanguage;
+          if (userLang.startsWith('ru')) {
+            setLanguage('ru');
+          } else {
+            setLanguage('en');
+          }
+        }
+      </script>
+    </body>
+    </html>
+  `);
 });
 
 // Fallback for local storage if R2 is not configured
