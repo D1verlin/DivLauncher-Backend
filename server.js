@@ -1283,13 +1283,14 @@ app.get('/api/profile', asyncHandler(async (req, res) => {
     const { uuid } = req.query;
     let user;
     if (uuid) {
+      // Match UUID ignoring dashes (standardize format between Yggdrasil/Launcher and database)
       user = await db.get(`
         SELECT id, username, uuid, skin_url, cape_url, is_admin, badge, bio, google_email,
                profile_bg_type, profile_bg_value, skin_model, avatar_type, avatar_url,
                social_discord, social_telegram, social_youtube, social_github,
                status_emoji, status_text
         FROM users
-        WHERE uuid = ?
+        WHERE REPLACE(uuid, '-', '') = REPLACE(?, '-', '')
       `, [uuid]);
     } else {
       user = await db.get(`
