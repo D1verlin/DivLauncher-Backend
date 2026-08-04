@@ -109,7 +109,10 @@ async function getDb() {
       { name: 'social_youtube', type: 'TEXT DEFAULT NULL' },
       { name: 'social_github', type: 'TEXT DEFAULT NULL' },
       { name: 'status_emoji', type: 'TEXT DEFAULT NULL' },
-      { name: 'status_text', type: 'TEXT DEFAULT NULL' }
+      { name: 'status_text', type: 'TEXT DEFAULT NULL' },
+      { name: 'avatar_border_color', type: 'TEXT DEFAULT \'#a78bfa\'' },
+      { name: 'current_activity', type: 'TEXT DEFAULT \'offline\'' },
+      { name: 'current_game', type: 'TEXT DEFAULT NULL' }
     ];
 
     try {

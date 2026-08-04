@@ -1266,7 +1266,10 @@ app.post('/api/login', asyncHandler(async (req, res) => {
       social_youtube: user.social_youtube,
       social_github: user.social_github,
       status_emoji: user.status_emoji,
-      status_text: user.status_text
+      status_text: user.status_text,
+      avatar_border_color: user.avatar_border_color || '#a78bfa',
+      current_activity: user.current_activity || 'online',
+      current_game: user.current_game || null
     }
   });
 }));
@@ -1288,7 +1291,7 @@ app.get('/api/profile', asyncHandler(async (req, res) => {
         SELECT id, username, uuid, skin_url, cape_url, is_admin, badge, bio, google_email,
                profile_bg_type, profile_bg_value, skin_model, avatar_type, avatar_url,
                social_discord, social_telegram, social_youtube, social_github,
-               status_emoji, status_text
+               status_emoji, status_text, avatar_border_color, current_activity, current_game
         FROM users
         WHERE REPLACE(uuid, '-', '') = REPLACE(?, '-', '')
       `, [uuid]);
@@ -1297,7 +1300,7 @@ app.get('/api/profile', asyncHandler(async (req, res) => {
         SELECT id, username, uuid, skin_url, cape_url, is_admin, badge, bio, google_email,
                profile_bg_type, profile_bg_value, skin_model, avatar_type, avatar_url,
                social_discord, social_telegram, social_youtube, social_github,
-               status_emoji, status_text
+               status_emoji, status_text, avatar_border_color, current_activity, current_game
         FROM users
         WHERE id = ?
       `, [decoded.id]);
@@ -1553,8 +1556,8 @@ app.post('/api/profile/customize', asyncHandler(async (req, res) => {
 
     const allowedFields = [
       'profile_bg_type', 'profile_bg_value', 'skin_model', 'avatar_type',
-      'social_discord', 'social_telegram', 'social_youtube', 'social_github',
-      'status_emoji', 'status_text', 'bio'
+      'status_emoji', 'status_text', 'bio', 'avatar_border_color',
+      'current_activity', 'current_game'
     ];
 
     const fieldsToSet = [];
@@ -1574,8 +1577,8 @@ app.post('/api/profile/customize', asyncHandler(async (req, res) => {
 
     const updatedUser = await db.get(`
       SELECT profile_bg_type, profile_bg_value, skin_model, avatar_type, avatar_url,
-             social_discord, social_telegram, social_youtube, social_github,
-             status_emoji, status_text, bio, google_email
+             status_emoji, status_text, bio, google_email, avatar_border_color,
+             current_activity, current_game
       FROM users WHERE id = ?
     `, [decoded.id]);
 
@@ -1697,8 +1700,7 @@ app.get('/api/users', asyncHandler(async (req, res) => {
     const users = await db.all(`
       SELECT id, username, uuid, skin_url, cape_url, is_admin, badge, bio,
              profile_bg_type, profile_bg_value, skin_model, avatar_type, avatar_url,
-             social_discord, social_telegram, social_youtube, social_github,
-             status_emoji, status_text
+             status_emoji, status_text, avatar_border_color, current_activity, current_game
       FROM users
     `);
 
