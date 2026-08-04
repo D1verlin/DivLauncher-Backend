@@ -21,7 +21,7 @@ let pool = null;
 
 function getPool() {
   if (!pool) {
-    const host = process.env.LP_DB_HOST || '77.239.121.180';
+    const host = process.env.LP_DB_HOST || '2.27.25.190';
     const user = process.env.LP_DB_USER || 'luckperms';
     const password = process.env.LP_DB_PASS || 'luckpermspass';
     const database = process.env.LP_DB_NAME || 'luckperms';
