@@ -112,7 +112,10 @@ async function getDb() {
       { name: 'status_text', type: 'TEXT DEFAULT NULL' },
       { name: 'avatar_border_color', type: 'TEXT DEFAULT \'#a78bfa\'' },
       { name: 'current_activity', type: 'TEXT DEFAULT \'offline\'' },
-      { name: 'current_game', type: 'TEXT DEFAULT NULL' }
+      { name: 'current_game', type: 'TEXT DEFAULT NULL' },
+      { name: 'two_factor_enabled', type: 'INTEGER DEFAULT 0' },
+      { name: 'two_factor_secret', type: 'TEXT DEFAULT NULL' },
+      { name: 'two_factor_backup_codes', type: 'TEXT DEFAULT NULL' }
     ];
 
     try {

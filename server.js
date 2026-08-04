@@ -1228,8 +1228,79 @@ app.post('/api/register', asyncHandler(async (req, res) => {
   }
 }));
 
+// --- PURE NODE.JS TOTP & 2FA UTILITIES ---
+function base32Decode(base32) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = '';
+  let hex = '';
+  const cleaned = (base32 || '').replace(/=+$/, '').toUpperCase();
+  for (let i = 0; i < cleaned.length; i++) {
+    const val = alphabet.indexOf(cleaned.charAt(i));
+    if (val === -1) continue;
+    bits += val.toString(2).padStart(5, '0');
+  }
+  for (let i = 0; i + 8 <= bits.length; i += 8) {
+    const chunk = bits.substr(i, 8);
+    hex += parseInt(chunk, 2).toString(16).padStart(2, '0');
+  }
+  return Buffer.from(hex, 'hex');
+}
+
+function generateTOTP(secretBase32, timeStepSeconds = 30, timestamp = Date.now()) {
+  const key = base32Decode(secretBase32);
+  let time = Math.floor(timestamp / 1000 / timeStepSeconds);
+  const buffer = Buffer.alloc(8);
+  for (let i = 7; i >= 0; i--) {
+    buffer[i] = time & 0xff;
+    time = Math.floor(time / 256);
+  }
+  const hmac = crypto.createHmac('sha1', key).update(buffer).digest();
+  const offset = hmac[hmac.length - 1] & 0xf;
+  const code = (
+    ((hmac[offset] & 0x7f) << 24) |
+    ((hmac[offset + 1] & 0xff) << 16) |
+    ((hmac[offset + 2] & 0xff) << 8) |
+    (hmac[offset + 3] & 0xff)
+  ) % 1000000;
+  return code.toString().padStart(6, '0');
+}
+
+function verifyTOTP(token, secretBase32, window = 1) {
+  if (!token || !secretBase32) return false;
+  const cleanToken = token.trim();
+  const now = Date.now();
+  for (let errorWindow = -window; errorWindow <= window; errorWindow++) {
+    const stepTime = now + (errorWindow * 30000);
+    const expected = generateTOTP(secretBase32, 30, stepTime);
+    if (cleanToken === expected) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function generateBase32Secret(length = 16) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  const randomBytes = crypto.randomBytes(length);
+  let secret = '';
+  for (let i = 0; i < length; i++) {
+    secret += alphabet[randomBytes[i] % alphabet.length];
+  }
+  return secret;
+}
+
+function generateBackupCodes(count = 8) {
+  const codes = [];
+  for (let i = 0; i < count; i++) {
+    const code = crypto.randomBytes(4).toString('hex').toUpperCase();
+    const formatted = `${code.slice(0, 4)}-${code.slice(4, 8)}`;
+    codes.push(formatted);
+  }
+  return codes;
+}
+
 app.post('/api/login', asyncHandler(async (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, two_factor_code } = req.body;
   const db = await getDb();
 
   const user = await db.get(`
@@ -1240,6 +1311,39 @@ app.post('/api/login', asyncHandler(async (req, res) => {
 
   if (!user || !(await bcrypt.compare(password, user.password))) {
     return res.status(401).json({ error: 'Invalid credentials' });
+  }
+
+  // Check 2FA requirement
+  if (user.two_factor_enabled === 1) {
+    if (!two_factor_code) {
+      return res.json({ requires_2fa: true, message: 'Введите код 2FA из приложения аутентификатора' });
+    }
+
+    const cleanCode = two_factor_code.trim().toUpperCase();
+    let isCodeValid = verifyTOTP(cleanCode, user.two_factor_secret);
+    let backupUsed = false;
+    let updatedBackupCodes = null;
+
+    if (!isCodeValid && user.two_factor_backup_codes) {
+      try {
+        const backupCodes = JSON.parse(user.two_factor_backup_codes);
+        const codeIndex = backupCodes.indexOf(cleanCode);
+        if (codeIndex !== -1) {
+          isCodeValid = true;
+          backupUsed = true;
+          backupCodes.splice(codeIndex, 1);
+          updatedBackupCodes = JSON.stringify(backupCodes);
+        }
+      } catch (e) {}
+    }
+
+    if (!isCodeValid) {
+      return res.status(400).json({ error: 'Invalid2FACode', errorMessage: 'Неверный код 2FA или резервный код' });
+    }
+
+    if (backupUsed && updatedBackupCodes !== null) {
+      await db.run('UPDATE users SET two_factor_backup_codes = ? WHERE id = ?', [updatedBackupCodes, user.id]);
+    }
   }
 
   const token = jwt.sign({ id: user.id, username: user.username, uuid: user.uuid, is_admin: user.is_admin }, JWT_SECRET, { expiresIn: '7d' });
@@ -1269,9 +1373,103 @@ app.post('/api/login', asyncHandler(async (req, res) => {
       status_text: user.status_text,
       avatar_border_color: user.avatar_border_color || '#a78bfa',
       current_activity: user.current_activity || 'online',
-      current_game: user.current_game || null
+      current_game: user.current_game || null,
+      two_factor_enabled: user.two_factor_enabled || 0
     }
   });
+}));
+
+// --- 2FA SETUP / ENABLE / DISABLE ENDPOINTS ---
+app.post('/api/auth/2fa/setup', asyncHandler(async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).send();
+  const token = authHeader.split(' ')[1];
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const db = await getDb();
+    const user = await db.get('SELECT * FROM users WHERE id = ?', [decoded.id]);
+    if (!user) return res.status(404).send();
+
+    const secret = generateBase32Secret(16);
+    const otpauthUrl = `otpauth://totp/DivLauncher:${encodeURIComponent(user.username)}?secret=${secret}&issuer=DivLauncher`;
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=10&data=${encodeURIComponent(otpauthUrl)}`;
+    const backupCodes = generateBackupCodes(8);
+
+    res.json({
+      secret,
+      otpauthUrl,
+      qrCodeUrl,
+      backupCodes
+    });
+  } catch (err) {
+    res.status(401).send();
+  }
+}));
+
+app.post('/api/auth/2fa/enable', asyncHandler(async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).send();
+  const token = authHeader.split(' ')[1];
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const { secret, code, backupCodes } = req.body;
+
+    if (!secret || !code) {
+      return res.status(400).json({ error: 'MissingFields', errorMessage: 'Не заполнен secret или 6-значный код' });
+    }
+
+    if (!verifyTOTP(code, secret)) {
+      return res.status(400).json({ error: 'InvalidCode', errorMessage: 'Неверный проверочный код 2FA' });
+    }
+
+    const db = await getDb();
+    const backupCodesJson = JSON.stringify(Array.isArray(backupCodes) ? backupCodes : []);
+
+    await db.run(
+      'UPDATE users SET two_factor_enabled = 1, two_factor_secret = ?, two_factor_backup_codes = ? WHERE id = ?',
+      [secret, backupCodesJson, decoded.id]
+    );
+
+    res.json({ success: true, message: 'Двухфакторная аутентификация успешно подключена' });
+  } catch (err) {
+    res.status(401).send();
+  }
+}));
+
+app.post('/api/auth/2fa/disable', asyncHandler(async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).send();
+  const token = authHeader.split(' ')[1];
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const { password, code } = req.body;
+    const db = await getDb();
+    const user = await db.get('SELECT * FROM users WHERE id = ?', [decoded.id]);
+    if (!user) return res.status(404).send();
+
+    let authorized = false;
+    if (password && (await bcrypt.compare(password, user.password))) {
+      authorized = true;
+    } else if (code && user.two_factor_secret && verifyTOTP(code, user.two_factor_secret)) {
+      authorized = true;
+    }
+
+    if (!authorized) {
+      return res.status(400).json({ error: 'InvalidAuth', errorMessage: 'Неверный пароль или код 2FA' });
+    }
+
+    await db.run(
+      'UPDATE users SET two_factor_enabled = 0, two_factor_secret = NULL, two_factor_backup_codes = NULL WHERE id = ?',
+      [decoded.id]
+    );
+
+    res.json({ success: true, message: 'Двухфакторная аутентификация отключена' });
+  } catch (err) {
+    res.status(401).send();
+  }
 }));
 
 app.get('/api/profile', asyncHandler(async (req, res) => {
@@ -1291,7 +1489,7 @@ app.get('/api/profile', asyncHandler(async (req, res) => {
         SELECT id, username, uuid, skin_url, cape_url, is_admin, badge, bio, google_email,
                profile_bg_type, profile_bg_value, skin_model, avatar_type, avatar_url,
                social_discord, social_telegram, social_youtube, social_github,
-               status_emoji, status_text, avatar_border_color, current_activity, current_game
+               status_emoji, status_text, avatar_border_color, current_activity, current_game, two_factor_enabled
         FROM users
         WHERE REPLACE(uuid, '-', '') = REPLACE(?, '-', '')
       `, [uuid]);
@@ -1300,7 +1498,7 @@ app.get('/api/profile', asyncHandler(async (req, res) => {
         SELECT id, username, uuid, skin_url, cape_url, is_admin, badge, bio, google_email,
                profile_bg_type, profile_bg_value, skin_model, avatar_type, avatar_url,
                social_discord, social_telegram, social_youtube, social_github,
-               status_emoji, status_text, avatar_border_color, current_activity, current_game
+               status_emoji, status_text, avatar_border_color, current_activity, current_game, two_factor_enabled
         FROM users
         WHERE id = ?
       `, [decoded.id]);
