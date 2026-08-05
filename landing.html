@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DivLauncher — Next-Gen Minecraft Ecosystem</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap');
+
+    :root {
+      --bg-color: #050508;
+      --card-bg: rgba(10, 10, 16, 0.45);
+      --border-color: rgba(255, 255, 255, 0.07);
+      --text-main: #ffffff;
+      --text-secondary: #e4e4e7;
+      --text-muted: #a1a1aa;
+      
+      --accent-emerald: #10b981;
+      --accent-emerald-hover: #34d399;
+      --accent-purple: #a78bfa;
+      --accent-purple-hover: #c084fc;
+      --accent-purple-deep: #7c3aed;
+      --accent-blue: #3b82f6;
+      --accent-blue-hover: #60a5fa;
+      --accent-amber: #f59e0b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: radial-gradient(circle at 50% 0%, #1a1635 0%, var(--bg-color) 80%);
+      color: var(--text-main);
+      font-family: 'Montserrat', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Floating blobs */
+    .glow-blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(100px);
+      z-index: 0;
+      pointer-events: none;
+      opacity: 0.15;
+    }
+
+    .glow-1 {
+      width: 500px;
+      height: 500px;
+      background: var(--accent-purple-deep);
+      top: -200px;
+      left: -100px;
+      animation: float-slow 20s infinite alternate;
+    }
+
+    .glow-2 {
+      width: 600px;
+      height: 600px;
+      background: var(--accent-emerald);
+      top: 30%;
+      right: -200px;
+      animation: float-slow 25s infinite alternate-reverse;
+    }
+
+    .glow-3 {
+      width: 400px;
+      height: 400px;
+      background: var(--accent-blue);
+      bottom: -100px;
+      left: 10%;
+    }
+
+    @keyframes float-slow {
+      0% { transform: translate(0, 0) scale(1); }
+      50% { transform: translate(50px, 30px) scale(1.1); }
+      100% { transform: translate(-30px, -50px) scale(0.9); }
+    }
+
+    header {
+      padding: 24px 6%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+      position: relative;
+    }
+
+    .logo-container {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+    }
+
+    .logo-container i {
+      font-size: 28px;
+      background: linear-gradient(135deg, var(--accent-emerald) 0%, var(--accent-purple) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .logo-text {
+      font-weight: 900;
+      font-size: 22px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--text-main);
+    }
+
+    .nav-links {
+      display: none;
+      align-items: center;
+      gap: 32px;
+    }
+
+    @media (min-width: 900px) {
+      .nav-links {
+        display: flex;
+      }
+    }
+
+    .nav-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      transition: color 0.3s;
+    }
+
+    .nav-link:hover {
+      color: var(--text-main);
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .lang-selector {
+      display: flex;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-color);
+      border-radius: 30px;
+      padding: 3px;
+    }
+
+    .lang-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 800;
+      font-size: 10px;
+      padding: 6px 12px;
+      border-radius: 20px;
+      cursor: pointer;
+    }
+
+    .lang-btn.active {
+      background: var(--accent-emerald);
+      color: var(--bg-color);
+    }
+
+    /* Hero section */
+    .hero {
+      padding: 40px 6% 80px;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 60px;
+      align-items: center;
+      position: relative;
+      z-index: 5;
+    }
+
+    @media (min-width: 1024px) {
+      .hero {
+        grid-template-columns: 1.2fr 1fr;
+      }
+    }
+
+    .hero-info {
+      max-width: 650px;
+    }
+
+    h1 {
+      font-size: 38px;
+      font-weight: 900;
+      line-height: 1.15;
+      margin-bottom: 20px;
+      letter-spacing: -1px;
+    }
+
+    @media (min-width: 640px) {
+      h1 { font-size: 54px; }
+    }
+
+    .gradient-text {
+      background: linear-gradient(135deg, var(--accent-emerald) 0%, var(--accent-purple) 70%, var(--accent-blue) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-desc {
+      font-size: 16px;
+      line-height: 1.7;
+      color: var(--text-secondary);
+      margin-bottom: 40px;
+    }
+
+    .cta-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      text-decoration: none;
+      font-weight: 800;
+      font-size: 13px;
+      padding: 16px 28px;
+      border-radius: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      cursor: pointer;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+    }
+
+    .btn:active {
+      transform: translateY(1px);
+    }
+
+    .btn-download {
+      background: var(--accent-emerald);
+      color: var(--bg-color);
+      box-shadow: 0 0 20px rgba(16, 185, 129, 0.25);
+    }
+
+    .btn-download:hover {
+      background: var(--accent-emerald-hover);
+      box-shadow: 0 0 30px rgba(16, 185, 129, 0.4);
+    }
+
+    .btn-outline {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+    }
+
+    .btn-outline:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    /* Decorative Hero Graphic Styling */
+    .decorative-hero-graphic {
+      position: relative;
+      width: 320px;
+      height: 320px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto;
+    }
+
+    .main-shield-orb {
+      width: 140px;
+      height: 140px;
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(124, 58, 237, 0.15) 100%);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 54px;
+      color: #ffffff;
+      box-shadow: 0 0 50px rgba(16, 185, 129, 0.15), inset 0 0 20px rgba(255, 255, 255, 0.05);
+      z-index: 2;
+      animation: pulse-glow 4s infinite alternate;
+    }
+
+    .orbital-ring {
+      position: absolute;
+      border-radius: 50%;
+      border: 1px dashed rgba(255, 255, 255, 0.06);
+      z-index: 1;
+    }
+
+    .ring-1 {
+      width: 200px;
+      height: 200px;
+      animation: spin-clockwise 15s linear infinite;
+    }
+
+    .ring-2 {
+      width: 260px;
+      height: 260px;
+      border: 1px solid rgba(255, 255, 255, 0.03);
+      animation: spin-counter-clockwise 22s linear infinite;
+    }
+
+    .ring-3 {
+      width: 320px;
+      height: 320px;
+      animation: spin-clockwise 30s linear infinite;
+    }
+
+    .orbit-dot {
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      top: -4px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .dot-emerald {
+      background-color: var(--accent-emerald);
+      box-shadow: 0 0 12px var(--accent-emerald);
+    }
+
+    .dot-purple {
+      background-color: var(--accent-purple);
+      box-shadow: 0 0 12px var(--accent-purple);
+    }
+
+    .dot-blue {
+      background-color: var(--accent-blue-hover);
+      box-shadow: 0 0 12px var(--accent-blue);
+    }
+
+    @keyframes pulse-glow {
+      0% {
+        transform: scale(0.98);
+        box-shadow: 0 0 40px rgba(16, 185, 129, 0.1);
+      }
+      100% {
+        transform: scale(1.02);
+        box-shadow: 0 0 60px rgba(124, 58, 237, 0.2);
+      }
+    }
+
+    @keyframes spin-clockwise {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    @keyframes spin-counter-clockwise {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(-360deg); }
+    }
+
+    /* Mockup Container (Reused as Download Card wrapper) */
+    .mockup-container {
+      perspective: 1000px;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+    }
+
+    /* Features Section */
+    .features-section {
+      padding: 80px 6%;
+      position: relative;
+      z-index: 5;
+    }
+
+    .section-title {
+      text-align: center;
+      margin-bottom: 50px;
+    }
+
+    .section-title h2 {
+      font-size: 32px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+    }
+
+    .section-title p {
+      color: var(--text-muted);
+      font-size: 15px;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 30px;
+    }
+
+    @media (min-width: 768px) {
+      .features-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (min-width: 1100px) {
+      .features-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+
+    .feature-card {
+      background: var(--card-bg);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      padding: 35px;
+      transition: all 0.3s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-5px);
+      border-color: rgba(255, 255, 255, 0.15);
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
+    }
+
+    .feature-icon-wrapper {
+      width: 50px;
+      height: 50px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      margin-bottom: 24px;
+    }
+
+    .icon-emerald {
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      color: var(--accent-emerald);
+    }
+
+    .icon-purple {
+      background: rgba(167, 139, 250, 0.1);
+      border: 1px solid rgba(167, 139, 250, 0.2);
+      color: var(--accent-purple);
+    }
+
+    .icon-blue {
+      background: rgba(59, 130, 246, 0.1);
+      border: 1px solid rgba(59, 130, 246, 0.2);
+      color: var(--accent-blue);
+    }
+
+    .feature-card h3 {
+      font-size: 18px;
+      font-weight: 800;
+      margin-bottom: 12px;
+    }
+
+    .feature-card p {
+      color: var(--text-muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    /* Steps Section */
+    .steps-section {
+      padding: 60px 6% 100px;
+      position: relative;
+      z-index: 5;
+      text-align: center;
+    }
+
+    .steps-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 30px;
+      max-width: 900px;
+      margin: 50px auto 0;
+    }
+
+    @media (min-width: 768px) {
+      .steps-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+
+    .step-card {
+      position: relative;
+      padding: 20px;
+    }
+
+    .step-number {
+      font-size: 48px;
+      font-weight: 900;
+      color: rgba(255, 255, 255, 0.05);
+      margin-bottom: -15px;
+      line-height: 1;
+    }
+
+    .step-card h4 {
+      font-size: 16px;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+
+    .step-card p {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* Footer */
+    footer {
+      background: #030306;
+      border-top: 1px solid var(--border-color);
+      padding: 40px 6%;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-muted);
+      z-index: 10;
+      position: relative;
+    }
+
+    .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .footer-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color 0.3s;
+      font-weight: 600;
+    }
+
+    .footer-link:hover {
+      color: var(--accent-emerald);
+    }
+
+    footer p {
+      margin-bottom: 8px;
+    }
+
+    footer a {
+      color: var(--text-secondary);
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      color: var(--accent-emerald);
+    }
+
+    /* Localization styling */
+    [lang-content] {
+      display: none;
+    }
+
+    body.lang-en [lang-content="en"] {
+      display: block;
+    }
+
+    body.lang-ru [lang-content="ru"] {
+      display: block;
+    }
+  </style>
+</head>
+<body class="lang-en">
+  <div class="glow-blob glow-1"></div>
+  <div class="glow-blob glow-2"></div>
+  <div class="glow-blob glow-3"></div>
+
+  <header>
+    <a href="/" class="logo-container">
+      <i class="fa-solid fa-shield-halved"></i>
+      <span class="logo-text">DivLauncher</span>
+    </a>
+    <nav class="nav-links">
+      <a href="#features" class="nav-link">
+        <span lang-content="en">Features</span>
+        <span lang-content="ru">Возможности</span>
+      </a>
+      <a href="/privacy" class="nav-link">
+        <span lang-content="en">Privacy</span>
+        <span lang-content="ru">Конфиденциальность</span>
+      </a>
+      <a href="/terms" class="nav-link">
+        <span lang-content="en">Terms</span>
+        <span lang-content="ru">Правила</span>
+      </a>
+    </nav>
+    <div class="nav-actions">
+      <div class="lang-selector">
+        <button class="lang-btn active" onclick="setLanguage('en')">EN</button>
+        <button class="lang-btn" onclick="setLanguage('ru')">RU</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero Section -->
+    <section class="hero">
+      <div class="hero-info">
+        <h1 lang-content="en">The Ultimate <span class="gradient-text">Minecraft</span> Launcher Workspace</h1>
+        <h1 lang-content="ru">Экосистема нового поколения для <span class="gradient-text">Minecraft</span></h1>
+
+        <p class="hero-desc" lang-content="en">
+          DivLauncher is a custom-branded, high-performance launcher ecosystem. Designed with glassmorphic visuals, it bundles automatic JRE resolution, clean modpack sync, integrated local server controls, automated backups, and secure Google OAuth2 login via our Yggdrasil authentication server.
+        </p>
+        <p class="hero-desc" lang-content="ru">
+          DivLauncher — это брендируемая и высокопроизводительная экосистема лаунчера. Разработанный в стиле Glassmorphism, он объединяет автоматический подбор Java JRE, чистую синхронизацию сборок, встроенное управление серверами с бэкапами и безопасный вход по Google OAuth2.
+        </p>
+
+        <div class="cta-container">
+          <a href="/download" class="btn btn-download auto-download-link">
+            <i class="fa-solid fa-download"></i>
+            <span lang-content="en">Download Launcher</span>
+            <span lang-content="ru">Скачать лаунчер</span>
+          </a>
+          <a href="#features" class="btn btn-outline">
+            <i class="fa-solid fa-circle-info"></i>
+            <span lang-content="en">Learn More</span>
+            <span lang-content="ru">Подробнее</span>
+          </a>
+        </div>
+      </div>
+
+      <div class="mockup-container">
+        <!-- Decorative Shield & Orbits Graphic (Non-Functional) -->
+        <div class="decorative-hero-graphic">
+          <div class="orbital-ring ring-1">
+            <div class="orbit-dot dot-emerald"></div>
+          </div>
+          <div class="orbital-ring ring-2">
+            <div class="orbit-dot dot-purple"></div>
+          </div>
+          <div class="orbital-ring ring-3">
+            <div class="orbit-dot dot-blue"></div>
+          </div>
+          <div class="main-shield-orb">
+            <i class="fa-solid fa-shield-halved"></i>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features-section" id="features">
+      <div class="section-title">
+        <h2 lang-content="en">Powerful Features</h2>
+        <h2 lang-content="ru">Возможности лаунчера</h2>
+        <p lang-content="en">A unified workspace offering complete control over game clients and servers.</p>
+        <p lang-content="ru">Единая среда, обеспечивающая полный контроль над клиентом и игровыми серверами.</p>
+      </div>
+
+      <div class="features-grid">
+        <!-- Feature 1 -->
+        <div class="feature-card">
+          <div class="feature-icon-wrapper icon-emerald">
+            <i class="fa-solid fa-gamepad"></i>
+          </div>
+          <h3 lang-content="en">Modpack Sync</h3>
+          <h3 lang-content="ru">Синхронизация модов</h3>
+          <p lang-content="en">Supports Forge, Fabric, Quilt, and NeoForge. Automatically detects and installs the optimal Java Runtime (JRE 8, 16, 17, 21) while clean-syncing ZIP archives to eliminate conflicts.</p>
+          <p lang-content="ru">Поддержка любых версий и ядер. Умный менеджер автоматически скачивает JRE (8, 16, 17, 21), а чистая синхронизация удаляет старые файлы перед установкой ZIP-обновлений.</p>
+        </div>
+
+        <!-- Feature 2 -->
+        <div class="feature-card">
+          <div class="feature-icon-wrapper icon-purple">
+            <i class="fa-solid fa-terminal"></i>
+          </div>
+          <h3 lang-content="en">Server Dashboard</h3>
+          <h3 lang-content="ru">Панель сервера</h3>
+          <p lang-content="en">Host and launch local game servers in one-click. Includes automated world backup managers, direct mod sync between server & client, and real-time color-coded console logs.</p>
+          <p lang-content="ru">Локальный запуск сервера в один клик. Включает резервное копирование миров, быструю синхронизацию модов и отслеживание консоли сервера с подсветкой событий в реальном времени.</p>
+        </div>
+
+        <!-- Feature 3 -->
+        <div class="feature-card">
+          <div class="feature-icon-wrapper icon-blue">
+            <i class="fa-solid fa-user-shield"></i>
+          </div>
+          <h3 lang-content="en">Secure Yggdrasil Auth</h3>
+          <h3 lang-content="ru">Безопасный Yggdrasil</h3>
+          <p lang-content="en">Powered by a custom backend API enabling secure player verification via Google OAuth2, integration with LuckPerms database ranks, and strict structural PNG validation for skin/cape uploads.</p>
+          <p lang-content="ru">Собственный бэкенд с Yggdrasil API для входа через Google OAuth2, автоматической синхронизацией рангов с LuckPerms и жесткой валидацией IHDR-структур скинов/плащей.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Steps Section -->
+    <section class="steps-section">
+      <div class="section-title">
+        <h2 lang-content="en">How to Start</h2>
+        <h2 lang-content="ru">Быстрый старт</h2>
+      </div>
+      
+      <div class="steps-grid">
+        <div class="step-card">
+          <div class="step-number">01</div>
+          <h4 lang-content="en">Download</h4>
+          <h4 lang-content="ru">Скачивание</h4>
+          <p lang-content="en">Get the installer for your OS and install the launcher on your PC.</p>
+          <p lang-content="ru">Скачайте установщик лаунчера для вашей операционной системы и запустите его.</p>
+        </div>
+        <div class="step-card">
+          <div class="step-number">02</div>
+          <h4 lang-content="en">Authenticate</h4>
+          <h4 lang-content="ru">Авторизация</h4>
+          <p lang-content="en">Log in securely with Google Account verification.</p>
+          <p lang-content="ru">Пройдите авторизацию, используя безопасный аккаунт Google OAuth2.</p>
+        </div>
+        <div class="step-card">
+          <div class="step-number">03</div>
+          <h4 lang-content="en">Play & Host</h4>
+          <h4 lang-content="ru">Игра и сервер</h4>
+          <p lang-content="en">Choose your favorite modpack, launch the game, or manage your server.</p>
+          <p lang-content="ru">Выберите сборку, играйте с друзьями или запустите свой локальный сервер.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="footer-links">
+      <a href="/privacy" class="footer-link">
+        <span lang-content="en">Privacy Policy</span>
+        <span lang-content="ru">Политика конфиденциальности</span>
+      </a>
+      <a href="/terms" class="footer-link">
+        <span lang-content="en">Terms of Service</span>
+        <span lang-content="ru">Условия использования</span>
+      </a>
+      <a href="/docs" class="footer-link">
+        <span lang-content="en">API Docs</span>
+        <span lang-content="ru">Документация</span>
+      </a>
+    </div>
+    <p>&copy; 2026 DivLauncher. All rights reserved. | <a href="mailto:support@diverlin.ru">support@diverlin.ru</a></p>
+    <p style="font-size: 10px; opacity: 0.5; margin-top: 10px;">
+      This server is operated under the DivLauncher License Agreement. Minecraft is a trademark of Mojang Synergies AB.
+    </p>
+  </footer>
+
+  <script>
+    function setLanguage(lang) {
+      document.body.className = 'lang-' + lang;
+      document.querySelectorAll('.lang-btn').forEach(btn => {
+        if (btn.innerText.toLowerCase() === lang) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+      localStorage.setItem('divlauncher-lang', lang);
+    }
+
+    const storedLang = localStorage.getItem('divlauncher-lang');
+    if (storedLang === 'en' || storedLang === 'ru') {
+      setLanguage(storedLang);
+    } else {
+      const userLang = navigator.language || navigator.userLanguage;
+      if (userLang.startsWith('ru')) {
+        setLanguage('ru');
+      } else {
+        setLanguage('en');
+      }
+    }
+
+    // Auto-updating Download Link from latest.yml
+    async function updateDownloadLink() {
+      try {
+        const res = await fetch('https://mc.diverlin.ru/DivLauncher/updates/latest.yml');
+        if (!res.ok) return;
+        const yamlText = await res.text();
+        
+        const pathMatch = yamlText.match(/path:\s*(.+)/);
+        if (pathMatch && pathMatch[1]) {
+          const fileName = pathMatch[1].trim();
+          const downloadUrl = `https://mc.diverlin.ru/DivLauncher/updates/${encodeURIComponent(fileName)}`;
+          
+          document.querySelectorAll('.auto-download-link').forEach(btn => {
+            btn.href = downloadUrl;
+          });
+        }
+      } catch (error) {
+        console.log('Failed to fetch latest.yml for auto-download setup', error);
+      }
+    }
+    updateDownloadLink();
+  </script>
+</body>
+</html>
