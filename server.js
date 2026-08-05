@@ -8,6 +8,8 @@ const { syncLuckPermsUser, syncLuckPermsGroup } = require('./luckperms');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+
 const { S3Client, ListObjectsV2Command, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { Upload } = require('@aws-sdk/lib-storage');
 const dotenvResult = require('dotenv').config({ path: path.join(__dirname, '.env'), override: true });
