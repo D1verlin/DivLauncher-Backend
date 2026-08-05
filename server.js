@@ -10,7 +10,7 @@ const path = require('path');
 const fs = require('fs');
 const { S3Client, ListObjectsV2Command, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { Upload } = require('@aws-sdk/lib-storage');
-const dotenvResult = require('dotenv').config({ path: path.join(__dirname, '.env') });
+const dotenvResult = require('dotenv').config({ path: path.join(__dirname, '.env'), override: true });
 if (dotenvResult.error) {
   console.log('Dotenv warning: .env file not found or could not be loaded:', dotenvResult.error.message);
 } else {
@@ -1382,20 +1382,30 @@ app.post('/api/login', asyncHandler(async (req, res) => {
 // --- 2FA SETUP / ENABLE / DISABLE ENDPOINTS ---
 app.post('/api/auth/2fa/setup', asyncHandler(async (req, res) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).send();
+  console.log('[2FA Setup] Authorization header:', authHeader ? authHeader.substring(0, 30) + '...' : 'MISSING');
+  if (!authHeader) {
+    console.log('[2FA Setup] ERROR: No Authorization header');
+    return res.status(401).json({ error: 'NoToken', errorMessage: 'Токен не передан' });
+  }
   const token = authHeader.split(' ')[1];
+  console.log('[2FA Setup] Token prefix:', token ? token.substring(0, 20) + '...' : 'EMPTY');
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
+    console.log('[2FA Setup] JWT verified OK. User id:', decoded.id, 'username:', decoded.username);
     const db = await getDb();
     const user = await db.get('SELECT * FROM users WHERE id = ?', [decoded.id]);
-    if (!user) return res.status(404).send();
+    if (!user) {
+      console.log('[2FA Setup] ERROR: User not found in DB for id:', decoded.id);
+      return res.status(404).json({ error: 'UserNotFound', errorMessage: 'Пользователь не найден' });
+    }
 
     const secret = generateBase32Secret(16);
     const otpauthUrl = `otpauth://totp/DivLauncher:${encodeURIComponent(user.username)}?secret=${secret}&issuer=DivLauncher`;
     const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=10&data=${encodeURIComponent(otpauthUrl)}`;
     const backupCodes = generateBackupCodes(8);
 
+    console.log('[2FA Setup] SUCCESS for user:', user.username);
     res.json({
       secret,
       otpauthUrl,
@@ -1403,9 +1413,11 @@ app.post('/api/auth/2fa/setup', asyncHandler(async (req, res) => {
       backupCodes
     });
   } catch (err) {
-    res.status(401).send();
+    console.log('[2FA Setup] ERROR in catch:', err.name, '-', err.message);
+    res.status(401).json({ error: 'InvalidToken', errorMessage: 'Невалидный или просроченный токен: ' + err.message });
   }
 }));
+
 
 app.post('/api/auth/2fa/enable', asyncHandler(async (req, res) => {
   const authHeader = req.headers.authorization;
